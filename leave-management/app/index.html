@@ -1,0 +1,575 @@
+<title>متابعة العطل والحضور</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Reem+Kufi:wght@500;700&display=swap">
+<style>
+/* تخطيط: شريط علوي ثابت بالتبويبات، ثم مساحة عمل واحدة لكل تبويب؛ الجداول تمرّر أفقياً داخل حاوياتها */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --ink: #14233a; --muted: #5b6577; --line: #d9dee6;
+  --accent: #1f5f8b; --accent-soft: #e3eef6; --gold: #b7791f;
+  --ok: #1e7a4c; --ok-soft: #e2f3ea; --warn: #9a5b00; --warn-soft: #fbf0dc; --bad: #b4232c; --bad-soft: #fbe5e6;
+  --font-display: 'Reem Kufi', 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --font-body: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, 'DejaVu Sans', sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1520; --surface: #172131; --ink: #e6ecf4; --muted: #9aa6b8; --line: #2b384c;
+  --accent: #6fb1e0; --accent-soft: #1b3047; --gold: #e0a84a;
+  --ok: #5fcf95; --ok-soft: #173326; --warn: #f0b25a; --warn-soft: #3a2b12; --bad: #f2828a; --bad-soft: #3d1d21; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1520; --surface: #172131; --ink: #e6ecf4; --muted: #9aa6b8; --line: #2b384c;
+  --accent: #6fb1e0; --accent-soft: #1b3047; --gold: #e0a84a;
+  --ok: #5fcf95; --ok-soft: #173326; --warn: #f0b25a; --warn-soft: #3a2b12; --bad: #f2828a; --bad-soft: #3d1d21; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6; direction: rtl; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding-block: 10px; }
+h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; font-weight: 700; color: var(--accent); }
+h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 8px; font-weight: 500; text-wrap: balance; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+nav.tabs button { font: inherit; border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+nav.tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+main.wrap { padding-block: 20px 40px; display: grid; gap: 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+input, select, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input[type="time"] { width: 100%; text-align: center; font-variant-numeric: tabular-nums; }
+button.btn { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+button.btn.ghost { background: transparent; color: var(--accent); }
+button.btn.ok { background: var(--ok); border-color: var(--ok); }
+button.btn.bad { background: transparent; color: var(--bad); border-color: var(--bad); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 2px; }
+.card .k { color: var(--muted); font-size: .8rem; letter-spacing: .01em; }
+.card .v { font-family: var(--font-display); font-size: 1.7rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.card .s { font-size: .8rem; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: right; vertical-align: middle; }
+th { font-size: .8rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
+table.sheet th, table.sheet td { border: 1px solid var(--line); text-align: center; }
+table.sheet td.name { white-space: nowrap; }
+table.sheet td.rem { text-align: right; min-width: 220px; font-size: .85rem; }
+table.sheet td.na { color: var(--muted); }
+table.sheet tr.leave td { background: var(--accent-soft); }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+.p-PENDING_MANAGER, .p-PENDING_HR { background: var(--warn-soft); color: var(--warn); }
+.p-APPROVED { background: var(--ok-soft); color: var(--ok); }
+.p-REJECTED, .p-CANCELLED { background: var(--bad-soft); color: var(--bad); }
+.p-RETURNED { background: var(--accent-soft); color: var(--accent); }
+.flag { color: var(--bad); font-weight: 600; }
+.note { color: var(--muted); font-size: .85rem; }
+.errors { color: var(--bad); margin: 0; padding-inline-start: 18px; }
+.sim { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; font-size: .9rem; }
+.empty { color: var(--muted); padding: 16px 0; }
+.toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: .9rem; }
+.banner { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (prefers-reduced-motion: no-preference) { nav.tabs button { transition: background .15s; } }
+</style>
+
+<header class="top"><div class="wrap">
+  <h1>متابعة العطل والحضور</h1>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="agent" aria-selected="true">رصيدي وعطلي</button>
+    <button role="tab" data-tab="approvals">الموافقات <span id="pendingCount"></span></button>
+    <button role="tab" data-tab="attendance">بطاقة الحضور</button>
+    <button role="tab" data-tab="reports">التقارير</button>
+    <button role="tab" data-tab="settings">الإعدادات</button>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <div class="banner" id="offline" hidden>لا يمكن الوصول إلى قاعدة البيانات في هذا العرض. افتح التطبيقة من حسابك على claude.ai لحفظ المعطيات.</div>
+  <div class="banner" id="readonly" hidden>أنت في وضع الاطلاع فقط: لا يمكنك تسجيل أو تعديل المعطيات.</div>
+
+  <!-- رصيدي وعطلي -->
+  <section data-pane="agent" class="grid2" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <label>العون<select id="agentSel"></select></label>
+        <label>السنة<select id="yearSel"></select></label>
+      </div>
+      <div class="cards" id="balanceCards" style="margin-top:14px"></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h2>طلب عطلة</h2>
+        <form id="leaveForm" class="row" style="align-items: stretch; flex-direction: column;">
+          <label>نوع العطلة<select id="lfType"></select></label>
+          <div class="row">
+            <label style="flex:1">من<input type="date" id="lfStart" required></label>
+            <label style="flex:1">إلى<input type="date" id="lfEnd" required></label>
+          </div>
+          <label id="lfReasonWrap" hidden>السبب<select id="lfReason"></select></label>
+          <label id="lfExtWrap" hidden><span><input type="checkbox" id="lfExt"> توأم أو مولود خديج (تقرير طبي)</span></label>
+          <label>ملاحظة / مرجع الوثيقة<input type="text" id="lfNote" placeholder="مثال: شهادة طبية مودعة بتاريخ ..."></label>
+          <div class="sim" id="lfSim">اختر النوع والتواريخ لعرض الأيام المحتسبة.</div>
+          <ul class="errors" id="lfErrors"></ul>
+          <div><button class="btn" type="submit" id="lfSubmit">إرسال الطلب</button></div>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>سجل العطل</h2>
+        <div class="scroll"><table><thead><tr><th>النوع</th><th>الفترة</th><th>الأيام</th><th>الأجر</th><th>الحالة</th><th></th></tr></thead><tbody id="historyBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- الموافقات -->
+  <section data-pane="approvals" hidden>
+    <div class="panel">
+      <h2>طلبات في انتظار القرار</h2>
+      <p class="note">المسار: العون ← رئيس القسم ← الموارد البشرية. عطل المرض والولادة تمرّ مباشرة إلى الموارد البشرية لمراقبة الوثيقة. الرفض والإرجاع يتطلبان تعليلاً.</p>
+      <div class="scroll"><table><thead><tr><th>العون</th><th>النوع</th><th>الفترة</th><th>الأيام</th><th>الرصيد بعد القبول</th><th>المرحلة</th><th>التعليل</th><th>القرار</th></tr></thead><tbody id="approvalBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- بطاقة الحضور -->
+  <section data-pane="attendance" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <div class="row">
+          <label>التاريخ<input type="date" id="attDate"></label>
+          <div><div class="note" id="attSchedule"></div><div class="note" id="attStatus"></div></div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost" id="attDownload" type="button">تنزيل البطاقة للطباعة</button>
+          <button class="btn" id="attClose" type="button">إقفال البطاقة</button>
+        </div>
+      </div>
+      <h2 style="margin-top:12px; text-align:center">بطاقة حضور — <span id="attDateAr"></span></h2>
+      <div class="scroll"><table class="sheet"><thead id="attHead"></thead><tbody id="attBody"></tbody></table></div>
+      <p class="note">التأخير في الدخول لا يُحتسب. عند الإقفال يُسجَّل الغياب غير المبرر والغياب عن حصة والتسجيل الناقص، ويُمنح العون 48 ساعة للتبرير.</p>
+    </div>
+  </section>
+
+  <!-- التقارير -->
+  <section data-pane="reports" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <h2>الحصيلة السنوية <span id="repYear"></span></h2>
+        <button class="btn ghost" id="repCsv" type="button">تنزيل CSV</button>
+      </div>
+      <div class="scroll"><table><thead><tr><th>الرقم الآلي</th><th>الإسم واللقب</th><th>المستحق</th><th>المستهلك (سنوية)</th><th>قيد الانتظار</th><th>المتبقي</th><th>مرض (كامل/نصف)</th><th>استثنائية</th><th>بدون أجر</th><th>أيام الخصم</th><th>غيابات غير مبررة</th></tr></thead><tbody id="repBody"></tbody></table></div>
+    </div>
+    <div class="panel">
+      <h2>الخصم الشهري لمنظومة الأجور</h2>
+      <p class="note">يُخصم 1/30 من الأجر عن كل يوم بدون أجر، ونصف ذلك عن كل يوم بنصف الأجر.</p>
+      <div class="scroll"><table><thead><tr><th>الشهر</th><th>الرقم الآلي</th><th>الإسم واللقب</th><th>أيام بدون أجر</th><th>أيام بنصف الأجر</th><th>المعادل بالأيام</th></tr></thead><tbody id="payBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- الإعدادات -->
+  <section data-pane="settings" hidden class="grid2">
+    <div class="panel">
+      <h2>الأرصدة السنوية</h2>
+      <p class="note">المستحق 30 يوماً افتراضياً. أدخل المرحّل من السنة الماضية، أو عدّل المستحق لمن لم يباشر كامل السنة (2,5 يوم عن كل شهر).</p>
+      <div class="scroll"><table><thead><tr><th>العون</th><th>المستحق</th><th>المرحّل</th><th></th></tr></thead><tbody id="balBody"></tbody></table></div>
+    </div>
+    <div class="panel">
+      <h2>فترات الحصة الواحدة</h2>
+      <p class="note">07:30–14:30، ويوم الجمعة 07:30–13:30. خارج هذه الفترات: 08:00–13:00 و14:00–17:00.</p>
+      <div id="periodList"></div>
+      <form class="row" id="periodForm"><label>من<input type="date" id="pFrom" required></label><label>إلى<input type="date" id="pTo" required></label><label>التسمية<input type="text" id="pLabel" placeholder="الصيف / رمضان"></label><button class="btn" type="submit">إضافة</button></form>
+      <h2 style="margin-top:20px">العطل الرسمية</h2>
+      <div id="holList"></div>
+      <form class="row" id="holForm"><label>اليوم<input type="date" id="hDay" required></label><label>التسمية<input type="text" id="hLabel" required></label><button class="btn" type="submit">إضافة</button></form>
+    </div>
+    <div class="panel">
+      <h2>الأعوان</h2>
+      <div id="empList"></div>
+      <form class="row" id="empForm"><label>الرقم الآلي<input type="text" id="eMat" required inputmode="numeric"></label><label>الإسم واللقب<input type="text" id="eName" required></label><button class="btn" type="submit">إضافة عون</button></form>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// ===== قواعد العطل (مطابقة لـ src/rules.js) =====
+const TYPES = {
+  ANNUAL:     { label: 'عطلة سنوية للاستراحة', pay: 'FULL', mode: 'CALENDAR', balance: true, notice: 15 },
+  SICK:       { label: 'عطلة مرض عادي', pay: 'TIERED', mode: 'CALENDAR', direct: true },
+  PRENATAL:   { label: 'عطلة ما قبل الولادة', pay: 'FULL', mode: 'CALENDAR', max: 15, direct: true },
+  MATERNITY:  { label: 'عطلة الأمومة (الولادة)', pay: 'FULL', mode: 'CALENDAR', max: 90, extMax: 120, direct: true },
+  POSTNATAL:  { label: 'عطلة ما بعد الولادة', pay: 'HALF', mode: 'CALENDAR', min: 30, max: 120 },
+  PATERNITY:  { label: 'عطلة الأبوة', pay: 'FULL', mode: 'CALENDAR', max: 7, direct: true },
+  EXCEPTIONAL:{ label: 'عطلة استثنائية', pay: 'FULL', mode: 'WORKING', perYear: 6 },
+  UNPAID:     { label: 'عطلة بدون أجر', pay: 'NONE', mode: 'CALENDAR', perYear: 90 },
+};
+const REASONS = { MARRIAGE: ['زواج العون', 3], CHILD_MARRIAGE: ['زواج أحد الأبناء', 1], DEATH_CLOSE: ['وفاة قريب من الدرجة الأولى', 3], DEATH_OTHER: ['وفاة قريب آخر', 1], EXAM: ['اجتياز امتحان', 2], OTHER: ['سبب آخر', 1] };
+const SICK_FULL = 60, SICK_MAX = 365, CARRY_MAX = 30;
+const STATUS = { PENDING_MANAGER: 'عند رئيس القسم', PENDING_HR: 'عند الموارد البشرية', APPROVED: 'مقبولة', REJECTED: 'مرفوضة', RETURNED: 'مُرجعة للتعديل', CANCELLED: 'ملغاة' };
+const ACTIVE = ['PENDING_MANAGER', 'PENDING_HR', 'APPROVED'];
+const MONTHS = ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const SCHED = {
+  DOUBLE: { label: 'نظام الحصتين: 08:00–13:00 و14:00–17:00', s: [['08:00','13:00'],['14:00','17:00']] },
+  SINGLE: { label: 'نظام الحصة الواحدة: 07:30–14:30', s: [['07:30','14:30']] },
+  SINGLE_FRI: { label: 'نظام الحصة الواحدة (الجمعة): 07:30–13:30', s: [['07:30','13:30']] },
+};
+
+const DAY = 86400000;
+const D = (s) => new Date(s + 'T00:00:00Z');
+const iso = (d) => d.toISOString().slice(0, 10);
+const today = () => iso(new Date(Date.now() - new Date().getTimezoneOffset() * 60000));
+const dmy = (s) => s.split('-').reverse().join('/');
+const dateAr = (s) => { const [y, m, d] = s.split('-'); return `${d} ${MONTHS[+m - 1]} ${y}`; };
+const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
+const $ = (id) => document.getElementById(id);
+
+// ===== الحالة =====
+const S = { employees: [], leaves: [], balances: {}, settings: { periods: [], holidays: [] }, att: {}, sheet: null, agent: null, year: new Date().getFullYear(), date: today(), db: null, canWrite: true };
+let attUnsub = null, sheetUnsub = null;
+
+function holidaysSet() { return new Set((S.settings.holidays || []).map((h) => h.day)); }
+function countDays(start, end, mode) {
+  const a = D(start), b = D(end);
+  if (b < a) return -1;
+  if (mode === 'CALENDAR') return Math.round((b - a) / DAY) + 1;
+  const off = holidaysSet(); let n = 0;
+  for (let t = a.getTime(); t <= b.getTime(); t += DAY) { const d = new Date(t); const w = d.getUTCDay(); if (w !== 0 && w !== 6 && !off.has(iso(d))) n++; }
+  return n;
+}
+function overlapDays(l, from, to) { // أيام تقويمية للعطلة داخل الفترة
+  const a = l.start > from ? l.start : from, b = l.end < to ? l.end : to;
+  return a > b ? 0 : Math.round((D(b) - D(a)) / DAY) + 1;
+}
+const empName = (m) => S.employees.find((e) => e.matricule === m)?.name || m;
+const leavesOf = (m) => S.leaves.filter((l) => l.matricule === m);
+
+function balanceOf(m, year) {
+  const b = S.balances[`${m}_${year}`] || {};
+  const entitled = b.entitled ?? 30, carried = b.carried ?? 0;
+  const y0 = `${year}-01-01`, y1 = `${year}-12-31`;
+  const ann = leavesOf(m).filter((l) => l.type === 'ANNUAL' && l.start <= y1 && l.end >= y0);
+  const used = ann.filter((l) => l.status === 'APPROVED').reduce((s, l) => s + l.days, 0);
+  const pending = ann.filter((l) => l.status === 'PENDING_MANAGER' || l.status === 'PENDING_HR').reduce((s, l) => s + l.days, 0);
+  return { entitled, carried, used, pending, remaining: entitled + carried - used - pending };
+}
+// توزيع أيام المرض على شرائح الأجر حسب نافذة 365 يوماً قبل بداية العطلة
+function sickSplit(m, leave) {
+  const from = iso(new Date(D(leave.start).getTime() - 365 * DAY));
+  const prior = leavesOf(m).filter((l) => l.type === 'SICK' && l.status === 'APPROVED' && l.id !== leave.id && l.start < leave.start)
+    .reduce((s, l) => s + overlapDays(l, from, iso(new Date(D(leave.start).getTime() - DAY))), 0);
+  const full = Math.max(0, Math.min(leave.days, SICK_FULL - prior));
+  const half = Math.max(0, Math.min(leave.days - full, SICK_MAX - Math.max(prior, SICK_FULL)));
+  return { full, half, none: leave.days - full - half, prior };
+}
+function paySplit(l) {
+  const t = TYPES[l.type];
+  if (t.pay === 'TIERED') return sickSplit(l.matricule, l);
+  if (t.pay === 'HALF') return { full: 0, half: l.days, none: 0 };
+  if (t.pay === 'NONE') return { full: 0, half: 0, none: l.days };
+  return { full: l.days, half: 0, none: 0 };
+}
+const payText = (p) => [p.full && `${fmt(p.full)} كامل`, p.half && `${fmt(p.half)} نصف`, p.none && `${fmt(p.none)} بدون`].filter(Boolean).join(' · ') || '—';
+
+function validate(req) {
+  const t = TYPES[req.type], errs = [];
+  if (!req.matricule) errs.push('اختر العون.');
+  if (!req.start || !req.end) return { errs: [...errs, 'حدّد تاريخ البداية والنهاية.'], days: 0 };
+  const days = countDays(req.start, req.end, t.mode);
+  if (days < 0) return { errs: [...errs, 'تاريخ النهاية قبل تاريخ البداية.'], days: 0 };
+  if (days === 0) errs.push('لا توجد أيام محتسبة في هذه الفترة.');
+  const clash = leavesOf(req.matricule).find((l) => ACTIVE.includes(l.status) && l.id !== req.id && l.start <= req.end && l.end >= req.start);
+  if (clash) errs.push(`تتداخل مع ${TYPES[clash.type].label} من ${dmy(clash.start)} إلى ${dmy(clash.end)}.`);
+  const year = +req.start.slice(0, 4);
+  if (req.type === 'ANNUAL') {
+    const b = balanceOf(req.matricule, year);
+    if (days > b.remaining) errs.push(`الرصيد غير كافٍ: ${fmt(b.remaining)} يوماً متاحاً.`);
+    const notice = Math.round((D(req.start) - D(today())) / DAY);
+    if (notice < t.notice) errs.push(`يُقدَّم طلب العطلة السنوية قبل ${t.notice} يوماً على الأقل (بقي ${notice} يوماً). يمكن للموارد البشرية قبوله استثنائياً.`);
+  }
+  const max = req.type === 'MATERNITY' && req.extended ? t.extMax : t.max;
+  if (max && days > max) errs.push(`المدة القصوى ${max} يوماً.`);
+  if (t.min && days < t.min) errs.push(`المدة الدنيا ${t.min} يوماً.`);
+  if (t.perYear) {
+    const used = leavesOf(req.matricule).filter((l) => l.type === req.type && ACTIVE.includes(l.status) && l.id !== req.id && l.start.startsWith(String(year))).reduce((s, l) => s + l.days, 0);
+    if (used + days > t.perYear) errs.push(`تجاوز السقف السنوي: ${t.perYear} يوماً (استُهلك ${fmt(used)}).`);
+  }
+  if (req.type === 'EXCEPTIONAL' && req.reason && days > REASONS[req.reason][1]) errs.push(`المدة المسموح بها لهذا السبب ${REASONS[req.reason][1]} يوم.`);
+  return { errs, days };
+}
+
+// ===== الحضور =====
+function scheduleFor(date) {
+  const single = (S.settings.periods || []).some((p) => date >= p.from && date <= p.to);
+  if (!single) return SCHED.DOUBLE;
+  return D(date).getUTCDay() === 5 ? SCHED.SINGLE_FRI : SCHED.SINGLE;
+}
+function rowStatus(m, date) {
+  const hol = (S.settings.holidays || []).find((h) => h.day === date);
+  if (hol) return { status: 'HOLIDAY', remark: hol.label };
+  const w = D(date).getUTCDay();
+  if (w === 0 || w === 6) return { status: 'WEEKEND', remark: 'راحة أسبوعية' };
+  const l = leavesOf(m).find((x) => (x.status === 'APPROVED' || (x.status === 'PENDING_HR' && TYPES[x.type].direct)) && x.start <= date && x.end >= date);
+  if (l) return { status: 'LEAVE', remark: `${TYPES[l.type].label} من ${dmy(l.start)} إلى ${dmy(l.end)}` };
+  return { status: 'EXPECTED', remark: '' };
+}
+function anomalies(entry, sched) {
+  const out = [], missed = [];
+  sched.s.forEach(([, end], i) => {
+    const a = entry?.[`in${i + 1}`], b = entry?.[`out${i + 1}`];
+    if (!a && !b) { missed.push(i); return; }
+    if (!a || !b) out.push({ code: 'MISSING', label: `تسجيل ناقص في الحصة ${i + 1}` });
+    if (b && toMin(b) < toMin(end)) out.push({ code: 'EARLY', label: `خروج مبكر ${toMin(end) - toMin(b)} دق` });
+  });
+  if (missed.length === sched.s.length) out.unshift({ code: 'ABSENT', days: 1, label: 'غياب غير مبرر' });
+  else if (missed.length) out.unshift({ code: 'HALF', days: 0.5, label: `غياب عن الحصة ${missed[0] + 1}` });
+  return out;
+}
+
+// ===== العرض =====
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); }
+function fillAgentSelect() {
+  const sel = $('agentSel'), cur = S.agent;
+  sel.innerHTML = S.employees.map((e) => `<option value="${esc(e.matricule)}">${esc(e.matricule)} — ${esc(e.name)}</option>`).join('') || '<option value="">لا يوجد أعوان بعد</option>';
+  if (cur && S.employees.some((e) => e.matricule === cur)) sel.value = cur; else S.agent = sel.value || null;
+}
+function renderAgent() {
+  const m = S.agent;
+  if (!m) { $('balanceCards').innerHTML = '<div class="empty">أضف الأعوان من تبويب الإعدادات.</div>'; $('historyBody').innerHTML = ''; return; }
+  const b = balanceOf(m, S.year);
+  const y0 = `${S.year}-01-01`, y1 = `${S.year}-12-31`;
+  const approved = leavesOf(m).filter((l) => l.status === 'APPROVED');
+  const sumType = (t) => approved.filter((l) => l.type === t).reduce((s, l) => s + overlapDays(l, y0, y1), 0);
+  const sickWin = approved.filter((l) => l.type === 'SICK').reduce((s, l) => s + overlapDays(l, iso(new Date(D(today()).getTime() - 364 * DAY)), today()), 0);
+  $('balanceCards').innerHTML = [
+    ['الرصيد السنوي المتبقي', fmt(b.remaining), `${fmt(b.entitled)} مستحق + ${fmt(b.carried)} مرحّل − ${fmt(b.used)} مستهلك − ${fmt(b.pending)} قيد الانتظار`],
+    ['مرض خلال 365 يوماً', fmt(sickWin), sickWin <= SICK_FULL ? `${fmt(SICK_FULL - sickWin)} يوماً متبقية بكامل الأجر` : 'تجاوز الشهرين: نصف الأجر'],
+    ['عطل استثنائية', `${fmt(sumType('EXCEPTIONAL'))} / ${TYPES.EXCEPTIONAL.perYear}`, 'خلال السنة'],
+    ['بدون أجر', fmt(sumType('UNPAID')), 'يوماً خلال السنة'],
+  ].map(([k, v, s]) => `<div class="card"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`).join('');
+  const rows = leavesOf(m).sort((a, b) => b.start.localeCompare(a.start));
+  $('historyBody').innerHTML = rows.map((l) => {
+    const canCancel = ['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) || (l.status === 'APPROVED' && l.start > today());
+    return `<tr><td>${esc(TYPES[l.type].label)}${l.reason ? `<div class="note">${esc(REASONS[l.reason][0])}</div>` : ''}</td>
+      <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}</td><td class="note">${payText(paySplit(l))}</td>
+      <td><span class="pill p-${l.status}">${STATUS[l.status]}</span>${l.comment ? `<div class="note">${esc(l.comment)}</div>` : ''}</td>
+      <td class="actions">${l.status === 'RETURNED' ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">لا توجد عطل مسجلة لهذا العون.</td></tr>';
+}
+function readForm() {
+  return { matricule: S.agent, type: $('lfType').value, start: $('lfStart').value, end: $('lfEnd').value, reason: $('lfType').value === 'EXCEPTIONAL' ? $('lfReason').value : null, extended: $('lfType').value === 'MATERNITY' && $('lfExt').checked, note: $('lfNote').value.trim() };
+}
+function renderForm() {
+  const req = readForm();
+  $('lfReasonWrap').hidden = req.type !== 'EXCEPTIONAL';
+  $('lfExtWrap').hidden = req.type !== 'MATERNITY';
+  if (!req.start || !req.end) { $('lfSim').textContent = 'اختر النوع والتواريخ لعرض الأيام المحتسبة.'; $('lfErrors').innerHTML = ''; return; }
+  const { errs, days } = validate(req);
+  const p = days > 0 ? paySplit({ ...req, days, id: '_new' }) : null;
+  $('lfSim').textContent = days > 0 ? `${fmt(days)} يوماً محتسباً (${TYPES[req.type].mode === 'WORKING' ? 'أيام عمل' : 'أيام تقويمية'}) — ${payText(p)}${req.type === 'ANNUAL' ? ` — الرصيد بعد الطلب: ${fmt(balanceOf(req.matricule, +req.start.slice(0, 4)).remaining - days)}` : ''}` : '—';
+  $('lfErrors').innerHTML = errs.map((e) => `<li>${esc(e)}</li>`).join('');
+  $('lfSubmit').disabled = errs.some((e) => !e.includes('استثنائياً')) || !S.db || !S.canWrite;
+}
+function renderApprovals() {
+  const pend = S.leaves.filter((l) => l.status === 'PENDING_MANAGER' || l.status === 'PENDING_HR').sort((a, b) => a.start.localeCompare(b.start));
+  $('pendingCount').textContent = pend.length ? `(${pend.length})` : '';
+  $('approvalBody').innerHTML = pend.map((l) => {
+    const after = l.type === 'ANNUAL' ? fmt(balanceOf(l.matricule, +l.start.slice(0, 4)).remaining) : '—';
+    return `<tr><td>${esc(empName(l.matricule))}<div class="note">${esc(l.matricule)}</div></td><td>${esc(TYPES[l.type].label)}${l.note ? `<div class="note">${esc(l.note)}</div>` : ''}</td>
+      <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}<div class="note">${payText(paySplit(l))}</div></td><td>${after}</td>
+      <td><span class="pill p-${l.status}">${STATUS[l.status]}</span></td>
+      <td><input type="text" id="c_${l.id}" placeholder="إجباري عند الرفض أو الإرجاع" style="width:100%"></td>
+      <td class="actions"><button class="btn ok" data-act="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة'}</button>
+        <button class="btn ghost" data-act="return" data-id="${l.id}">إرجاع</button><button class="btn bad" data-act="reject" data-id="${l.id}">رفض</button></td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">لا توجد طلبات في الانتظار.</td></tr>';
+}
+function sheetRows(date) {
+  const sched = scheduleFor(date), closed = !!S.sheet?.closed;
+  return S.employees.map((e, i) => {
+    const st = rowStatus(e.matricule, date), entry = S.att[e.matricule] || {};
+    const an = st.status === 'EXPECTED' && closed ? anomalies(entry, sched) : [];
+    const remark = [st.remark, ...an.map((a) => a.label), entry.note].filter(Boolean).join(' — ');
+    return { n: i + 1, e, st, entry, an, remark };
+  });
+}
+function renderAttendance() {
+  const date = S.date, sched = scheduleFor(date);
+  $('attDate').value = date; $('attDateAr').textContent = dateAr(date);
+  $('attSchedule').textContent = sched.label;
+  $('attStatus').textContent = S.sheet?.closed ? 'البطاقة مقفلة' : 'البطاقة مفتوحة للإدخال';
+  $('attClose').textContent = S.sheet?.closed ? 'إعادة فتح البطاقة' : 'إقفال البطاقة';
+  $('attHead').innerHTML = `<tr><th>ع/ر</th><th>الرقم الآلي</th><th>الإسم و اللقب</th>${sched.s.map(() => '<th>دخول</th><th>خروج</th>').join('')}<th>ملاحظات</th></tr>`;
+  const ro = S.sheet?.closed || !S.db || !S.canWrite;
+  $('attBody').innerHTML = sheetRows(date).map((r) => {
+    const cells = sched.s.map((_, i) => ['in', 'out'].map((k) => r.st.status !== 'EXPECTED' ? '<td class="na">—</td>'
+      : `<td><input type="time" data-m="${esc(r.e.matricule)}" data-f="${k}${i + 1}" value="${esc(r.entry[`${k}${i + 1}`] || '')}" ${ro ? 'disabled' : ''} aria-label="${k === 'in' ? 'دخول' : 'خروج'} ${esc(r.e.name)}"></td>`).join('')).join('');
+    const flag = r.an.some((a) => a.days);
+    return `<tr class="${r.st.status === 'LEAVE' ? 'leave' : ''}"><td>${r.n}</td><td>${esc(r.e.matricule)}</td><td class="name">${esc(r.e.name)}</td>${cells}
+      <td class="rem"><span class="${flag ? 'flag' : ''}">${esc(r.remark)}</span>
+      ${r.st.status === 'EXPECTED' && !S.sheet?.closed ? `<input type="text" data-m="${esc(r.e.matricule)}" data-f="note" value="${esc(r.entry.note || '')}" placeholder="ملاحظة" ${ro ? 'disabled' : ''} style="width:100%">` : ''}
+      ${flag ? `<div><button class="btn ghost" data-act="regularize" data-m="${esc(r.e.matricule)}">تسوية بعطلة</button></div>` : ''}</td></tr>`;
+  }).join('') || `<tr><td colspan="${4 + sched.s.length * 2}" class="empty">أضف الأعوان من تبويب الإعدادات.</td></tr>`;
+}
+function reportData() {
+  const y = S.year, y0 = `${y}-01-01`, y1 = `${y}-12-31`;
+  return S.employees.map((e) => {
+    const b = balanceOf(e.matricule, y);
+    const ap = leavesOf(e.matricule).filter((l) => l.status === 'APPROVED' && l.start <= y1 && l.end >= y0);
+    const sick = ap.filter((l) => l.type === 'SICK').map(paySplit).reduce((s, p) => ({ full: s.full + p.full, half: s.half + p.half }), { full: 0, half: 0 });
+    const sum = (t) => ap.filter((l) => l.type === t).reduce((s, l) => s + l.days, 0);
+    const pays = ap.map(paySplit);
+    const deduct = pays.reduce((s, p) => s + p.none + p.half / 2, 0);
+    return { m: e.matricule, name: e.name, ...b, sickFull: sick.full, sickHalf: sick.half, exc: sum('EXCEPTIONAL'), unpaid: sum('UNPAID'), deduct, absences: S.absences?.[e.matricule] || 0 };
+  });
+}
+function renderReports() {
+  $('repYear').textContent = S.year;
+  const rows = reportData();
+  $('repBody').innerHTML = rows.map((r) => `<tr><td>${esc(r.m)}</td><td>${esc(r.name)}</td><td>${fmt(r.entitled + r.carried)}</td><td>${fmt(r.used)}</td><td>${fmt(r.pending)}</td><td><b>${fmt(r.remaining)}</b></td><td>${fmt(r.sickFull)} / ${fmt(r.sickHalf)}</td><td>${fmt(r.exc)}</td><td>${fmt(r.unpaid)}</td><td>${fmt(r.deduct)}</td><td>${r.absences ? `<span class="flag">${fmt(r.absences)}</span>` : '0'}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">لا توجد معطيات بعد.</td></tr>';
+  const month = {};
+  S.leaves.filter((l) => l.status === 'APPROVED').forEach((l) => {
+    const p = paySplit(l); if (!p.none && !p.half) return;
+    const ratioNone = p.none / l.days, ratioHalf = p.half / l.days;
+    for (let t = D(l.start).getTime(); t <= D(l.end).getTime(); t += DAY) {
+      const k = iso(new Date(t)).slice(0, 7); if (!k.startsWith(String(S.year))) continue;
+      const key = `${k}|${l.matricule}`; month[key] ||= { none: 0, half: 0 };
+      month[key].none += ratioNone; month[key].half += ratioHalf;
+    }
+  });
+  const keys = Object.keys(month).sort();
+  $('payBody').innerHTML = keys.map((k) => { const [mo, m] = k.split('|'), v = month[k]; return `<tr><td>${MONTHS[+mo.slice(5) - 1]} ${mo.slice(0, 4)}</td><td>${esc(m)}</td><td>${esc(empName(m))}</td><td>${fmt(v.none)}</td><td>${fmt(v.half)}</td><td><b>${fmt(v.none + v.half / 2)}</b></td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">لا توجد أيام بدون أجر أو بنصف الأجر هذه السنة.</td></tr>';
+}
+function renderSettings() {
+  $('balBody').innerHTML = S.employees.map((e) => {
+    const b = S.balances[`${e.matricule}_${S.year}`] || {};
+    return `<tr><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div></td><td><input type="number" step="0.5" min="0" id="be_${esc(e.matricule)}" value="${b.entitled ?? 30}" style="width:80px"></td><td><input type="number" step="0.5" min="0" max="${CARRY_MAX}" id="bc_${esc(e.matricule)}" value="${b.carried ?? 0}" style="width:80px"></td><td><button class="btn ghost" data-act="saveBal" data-m="${esc(e.matricule)}">حفظ</button></td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
+  $('periodList').innerHTML = (S.settings.periods || []).map((p, i) => `<div class="row" style="align-items:center">${esc(p.label || 'حصة واحدة')}: ${dmy(p.from)} ← ${dmy(p.to)} <button class="btn bad" data-act="delPeriod" data-i="${i}">حذف</button></div>`).join('') || '<p class="note">لا توجد فترات.</p>';
+  $('holList').innerHTML = (S.settings.holidays || []).slice().sort((a, b) => a.day.localeCompare(b.day)).map((h) => `<div class="row" style="align-items:center">${dmy(h.day)} — ${esc(h.label)} <button class="btn bad" data-act="delHol" data-day="${h.day}">حذف</button></div>`).join('') || '<p class="note">لا توجد عطل رسمية.</p>';
+  $('empList').innerHTML = S.employees.map((e) => `<div>${esc(e.order)}. ${esc(e.matricule)} — ${esc(e.name)}</div>`).join('') || '<p class="note">لا يوجد أعوان بعد.</p>';
+}
+function renderAll() { fillAgentSelect(); renderAgent(); renderForm(); renderApprovals(); renderAttendance(); renderReports(); renderSettings(); }
+
+// ===== الكتابة =====
+async function write(fn, okMsg) {
+  if (!S.db) return toast('قاعدة البيانات غير متاحة في هذا العرض.');
+  try { await fn(S.db); if (okMsg) toast(okMsg); } catch (e) { toast(e?.code === 'not_granted' ? 'ليست لديك صلاحية التعديل.' : 'تعذّر الحفظ، أعد المحاولة.'); }
+}
+$('leaveForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const req = readForm(); const { errs, days } = validate(req);
+  if (errs.some((e) => !e.includes('استثنائياً'))) return;
+  const status = TYPES[req.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER';
+  write((db) => db.collection('leaves').add({ ...req, days, status, createdAt: new Date().toISOString(), comment: '' }), 'أُرسل الطلب.');
+  $('lfNote').value = '';
+});
+['lfType', 'lfStart', 'lfEnd', 'lfReason', 'lfExt', 'lfNote'].forEach((id) => $(id).addEventListener('input', renderForm));
+$('lfStart').addEventListener('change', () => { if (!$('lfEnd').value || $('lfEnd').value < $('lfStart').value) $('lfEnd').value = $('lfStart').value; renderForm(); });
+$('agentSel').addEventListener('change', (e) => { S.agent = e.target.value; renderAgent(); renderForm(); });
+$('yearSel').addEventListener('change', (e) => { S.year = +e.target.value; renderAgent(); renderReports(); renderSettings(); });
+$('attDate').addEventListener('change', (e) => { if (e.target.value) { S.date = e.target.value; subscribeDay(); } });
+
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-act]'); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id, l = S.leaves.find((x) => x.id === id);
+  if (act === 'approve' || act === 'reject' || act === 'return') {
+    const comment = $(`c_${id}`)?.value.trim() || '';
+    if (act !== 'approve' && !comment) { $(`c_${id}`)?.focus(); return toast('اكتب التعليل قبل الرفض أو الإرجاع.'); }
+    if (act === 'approve' && l.type === 'ANNUAL' && l.status === 'PENDING_HR') {
+      const v = validate({ ...l }); if (v.errs.some((e) => e.includes('الرصيد'))) return toast('الرصيد لم يعد كافياً لهذا الطلب.');
+    }
+    const next = act === 'reject' ? 'REJECTED' : act === 'return' ? 'RETURNED' : l.status === 'PENDING_MANAGER' ? 'PENDING_HR' : 'APPROVED';
+    const log = [...(l.log || []), { at: new Date().toISOString(), from: l.status, to: next, comment }];
+    write((db) => db.doc(`leaves/${id}`).update({ status: next, comment, log }), next === 'APPROVED' ? 'صودق على العطلة.' : 'سُجّل القرار.');
+  }
+  if (act === 'cancel') write((db) => db.doc(`leaves/${id}`).update({ status: 'CANCELLED', log: [...(l.log || []), { at: new Date().toISOString(), from: l.status, to: 'CANCELLED' }] }), 'أُلغي الطلب.');
+  if (act === 'resubmit') {
+    const v = validate({ ...l }); if (v.errs.some((e) => !e.includes('استثنائياً'))) return toast(v.errs[0]);
+    write((db) => db.doc(`leaves/${id}`).update({ status: TYPES[l.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER', days: v.days }), 'أُعيد إرسال الطلب.');
+  }
+  if (act === 'regularize') {
+    S.agent = b.dataset.m; $('agentSel').value = S.agent; $('lfStart').value = S.date; $('lfEnd').value = S.date; $('lfType').value = 'ANNUAL';
+    $('lfNote').value = `تسوية غياب يوم ${dmy(S.date)}`; switchTab('agent'); renderAgent(); renderForm();
+  }
+  if (act === 'saveBal') {
+    const m = b.dataset.m, entitled = +$(`be_${m}`).value, carried = Math.min(CARRY_MAX, +$(`bc_${m}`).value);
+    write((db) => db.doc(`balances/${m}_${S.year}`).set({ matricule: m, year: S.year, entitled, carried }), 'حُفظ الرصيد.');
+  }
+  if (act === 'delPeriod') { const periods = S.settings.periods.filter((_, i) => i !== +b.dataset.i); write((db) => db.doc('settings/main').update({ periods }), 'حُذفت الفترة.'); }
+  if (act === 'delHol') { const holidays = S.settings.holidays.filter((h) => h.day !== b.dataset.day); write((db) => db.doc('settings/main').update({ holidays }), 'حُذفت العطلة.'); }
+});
+document.addEventListener('change', (ev) => {
+  const el = ev.target; if (!el.dataset?.m || !el.dataset.f) return;
+  const m = el.dataset.m, f = el.dataset.f;
+  write((db) => db.doc(`attendance/${S.date}_${m}`).set({ ...(S.att[m] || {}), date: S.date, matricule: m, [f]: el.value }));
+});
+$('attClose').addEventListener('click', () => write((db) => db.doc(`sheets/${S.date}`).set({ date: S.date, closed: !S.sheet?.closed, at: new Date().toISOString() }), S.sheet?.closed ? 'أُعيد فتح البطاقة.' : 'أُقفلت البطاقة.'));
+$('periodForm').addEventListener('submit', (ev) => { ev.preventDefault(); const periods = [...(S.settings.periods || []), { from: $('pFrom').value, to: $('pTo').value, label: $('pLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, periods }), 'أُضيفت الفترة.'); ev.target.reset(); });
+$('holForm').addEventListener('submit', (ev) => { ev.preventDefault(); const holidays = [...(S.settings.holidays || []).filter((h) => h.day !== $('hDay').value), { day: $('hDay').value, label: $('hLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, holidays }), 'أُضيفت العطلة.'); ev.target.reset(); });
+$('empForm').addEventListener('submit', (ev) => { ev.preventDefault(); const m = $('eMat').value.trim(); write((db) => db.doc(`employees/${m}`).set({ matricule: m, name: $('eName').value.trim(), order: S.employees.length + 1 }), 'أُضيف العون.'); ev.target.reset(); });
+
+// ===== التنزيلات =====
+async function save(filename, data, type) {
+  const dl = await window.claude?.use?.('downloads');
+  if (!dl) return toast('التنزيل غير متاح في هذا العرض.');
+  try { await dl.save({ filename, data: new Blob([data], { type }) }); } catch (e) { if (e?.code !== 'cancelled') toast('لم يتم التنزيل.'); }
+}
+$('repCsv').addEventListener('click', () => {
+  const head = ['الرقم الآلي', 'الإسم واللقب', 'المستحق', 'المستهلك', 'قيد الانتظار', 'المتبقي', 'مرض بكامل الأجر', 'مرض بنصف الأجر', 'استثنائية', 'بدون أجر', 'أيام الخصم'];
+  const lines = reportData().map((r) => [r.m, r.name, r.entitled + r.carried, r.used, r.pending, r.remaining, r.sickFull, r.sickHalf, r.exc, r.unpaid, r.deduct].join(','));
+  save(`حصيلة-العطل-${S.year}.csv`, '﻿' + [head.join(','), ...lines].join('\r\n'), 'text/csv');
+});
+$('attDownload').addEventListener('click', () => {
+  const sched = scheduleFor(S.date), rows = sheetRows(S.date);
+  const body = rows.map((r) => `<tr><td><b>${r.n}</b></td><td>${esc(r.e.matricule)}</td><td>${esc(r.e.name)}</td>${sched.s.map((_, i) => ['in', 'out'].map((k) => `<td>${r.st.status !== 'EXPECTED' ? '—' : esc(r.entry[`${k}${i + 1}`] || '')}</td>`).join('')).join('')}<td style="font-size:12px">${esc(r.remark)}</td></tr>`).join('');
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بطاقة حضور ${dateAr(S.date)}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif}header{display:flex;justify-content:space-between}.t{text-align:center;font-weight:bold;font-size:20px;line-height:1.6}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{border:1.5px solid #000;text-align:center;height:44px;font-size:15px}footer{display:flex;justify-content:space-between;margin-top:18px;font-size:13px}</style></head><body><header><div style="font-size:13px">الإدارة المركزية للموارد البشرية<br><b>إدارة العمل الاجتماعي والثقافي</b></div><div class="t">بطاقة حضور<br>التاريخ: ${dateAr(S.date)}</div><div style="width:130px"></div></header><table><thead><tr><th>ع/ر</th><th>الرقم الآلي</th><th>الإسم و اللقب</th>${sched.s.map(() => '<th>دخول</th><th>خروج</th>').join('')}<th>ملاحظات</th></tr></thead><tbody>${body}</tbody></table><footer><span>${sched.label}</span><span>إمضاء رئيس القسم: ....................</span></footer></body></html>`;
+  save(`بطاقة-حضور-${S.date}.html`, html, 'text/html');
+});
+
+// ===== التبويبات =====
+function switchTab(name) {
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  document.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== name));
+  try { localStorage.setItem('tab', name); } catch {}
+}
+$('tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) switchTab(b.dataset.tab); });
+(() => { let t = 'agent'; try { t = localStorage.getItem('tab') || t; } catch {} if (location.hash.slice(1)) t = location.hash.slice(1); if (document.querySelector(`[data-pane="${t}"]`)) switchTab(t); })();
+
+// ===== التهيئة =====
+$('lfType').innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
+$('lfReason').innerHTML = Object.entries(REASONS).map(([k, [l, d]]) => `<option value="${k}">${l} (${d} ${d === 1 ? 'يوم' : 'أيام'})</option>`).join('');
+const y = new Date().getFullYear();
+$('yearSel').innerHTML = [y + 1, y, y - 1, y - 2].map((v) => `<option value="${v}" ${v === y ? 'selected' : ''}>${v}</option>`).join('');
+renderAll();
+
+function subscribeDay() {
+  if (!S.db) return renderAttendance();
+  attUnsub?.(); sheetUnsub?.(); S.att = {}; S.sheet = null; renderAttendance();
+  attUnsub = S.db.collection('attendance').where('date', '==', S.date).onSnapshot((snap) => { S.att = {}; snap.docs.forEach((d) => { const v = d.data(); S.att[v.matricule] = v; }); renderAttendance(); });
+  sheetUnsub = S.db.doc(`sheets/${S.date}`).onSnapshot((d) => { S.sheet = d.exists ? d.data() : null; renderAttendance(); });
+}
+(async () => {
+  const db = await window.claude?.use?.('db');
+  if (!db) { $('offline').hidden = false; return; }
+  S.db = db;
+  const user = await window.claude.use('user');
+  const can = await user?.can?.('data.write');
+  if (can === false) { S.canWrite = false; $('readonly').hidden = false; }
+  db.collection('employees').onSnapshot((s) => { S.employees = s.docs.map((d) => d.data()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)); renderAll(); });
+  db.collection('leaves').onSnapshot((s) => { S.leaves = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); });
+  db.collection('balances').onSnapshot((s) => { S.balances = {}; s.docs.forEach((d) => (S.balances[d.id] = d.data())); renderAll(); });
+  db.doc('settings/main').onSnapshot((d) => { S.settings = d.exists ? { periods: [], holidays: [], ...d.data() } : { periods: [], holidays: [] }; renderAll(); });
+  db.collection('sheets').where('closed', '==', true).onSnapshot(async (s) => {
+    // غيابات غير مبررة في البطاقات المقفلة (للتقارير)
+    S.absences = {};
+    for (const d of s.docs) {
+      const date = d.data().date; if (!date.startsWith(String(S.year))) continue;
+      const att = await db.collection('attendance').where('date', '==', date).get();
+      const map = {}; att.docs.forEach((x) => { const v = x.data(); map[v.matricule] = v; });
+      S.employees.forEach((e) => { if (rowStatus(e.matricule, date).status !== 'EXPECTED') return; const a = anomalies(map[e.matricule], scheduleFor(date)).find((z) => z.days); if (a) S.absences[e.matricule] = (S.absences[e.matricule] || 0) + a.days; });
+    }
+    renderReports();
+  });
+  subscribeDay();
+})();
+</script>
