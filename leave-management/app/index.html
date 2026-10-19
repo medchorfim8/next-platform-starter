@@ -634,7 +634,7 @@ function print906(l) {
 @page{size:A4;margin:12mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,Arial,sans-serif;font-size:16px;color:#000}
 .page{border:1.5px solid #7a4a86;border-radius:14px;padding:20px 28px}
 .c{text-align:center}.no{font-size:18px;margin:6px 0 14px}
-.org{display:flex;justify-content:space-between;font-size:18px;margin-bottom:10px}
+.org{display:flex;justify-content:space-between;font-size:18px;margin-bottom:10px;white-space:nowrap}
 h1{text-align:center;font-size:24px;margin:10px 0}
 .types{display:grid;justify-content:center;gap:8px;font-size:19px;font-weight:bold;margin-bottom:22px}
 .types div{display:grid;grid-template-columns:200px 34px 200px;align-items:center;gap:14px}
@@ -672,7 +672,7 @@ ${row('إسم النائب (عند الإقتضاء)', 'Nom du remplaçant (éve
 <span>(2) Ecrire la nature du congé (repos ou exceptionnel)</span><span class="ar">(2) ذكر نوعية العطلة (إستراحة أو إستثنائية)</span>
 <span>(3) Indiquer l'année à laquelle se rapporte le congé</span><span class="ar">(3) ذكر سنة إستحقاق عطلة الإستراحة</span>
 </div></div></body></html>`;
-  save(`طلب-عطلة-906-${l.matricule}-${l.start}.html`, html, 'text/html');
+  savePdf(html, `طلب-عطلة-906-${l.matricule}-${l.start}.pdf`, 'portrait');
 }
 function printPermit(p) {
   const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>رخصة ${p.kind === 'EXIT' ? 'خروج' : 'دخول'} ${esc(empName(p.matricule))}</title><style>@page{size:A5;margin:14mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif;font-size:18px}.org{font-size:15px}.org b{display:block;margin-top:40px}h1{text-align:center;font-size:30px;margin:50px 0 30px}.f{display:flex;gap:10px;margin:18px 0}.f b{min-width:140px}.f span{flex:1;border-bottom:1px dotted #000}.sig{display:flex;justify-content:space-between;margin-top:50px}.sig small{display:block;font-size:13px}</style></head><body>
@@ -684,7 +684,7 @@ function printPermit(p) {
 <div class="f"><b>${p.kind === 'EXIT' ? 'توقيت الخروج' : 'توقيت الدخول'}:</b><span>${esc(p.time)}</span></div>
 <div class="f"><b>السبب:</b><span>${esc(p.reason)}</span></div>
 <div class="sig"><div>رأي الرئيس المباشر<small>(الإمضاء والختم)</small></div><div>إمضاء المعني بالأمر</div></div></body></html>`;
-  save(`رخصة-${p.matricule}-${p.date}.html`, html, 'text/html');
+  savePdf(html, `رخصة-${p.matricule}-${p.date}.pdf`, 'portrait');
 }
 $('attClose').addEventListener('click', () => write((db) => db.doc(`sheets/${S.date}`).set({ date: S.date, closed: !S.sheet?.closed, at: new Date().toISOString() }), S.sheet?.closed ? 'أُعيد فتح البطاقة.' : 'أُقفلت البطاقة.'));
 $('periodForm').addEventListener('submit', (ev) => { ev.preventDefault(); const periods = [...(S.settings.periods || []), { from: $('pFrom').value, to: $('pTo').value, label: $('pLabel').value.trim() }]; write((db) => db.doc('public/settings').set({ ...S.settings, periods }), 'أُضيفت الفترة.'); ev.target.reset(); });
@@ -697,6 +697,43 @@ async function save(filename, data, type) {
   if (!dl) return toast('التنزيل غير متاح في هذا العرض.');
   try { await dl.save({ filename, data: new Blob([data], { type }) }); } catch (e) { if (e?.code !== 'cancelled') toast('لم يتم التنزيل.'); }
 }
+// تحويل الوثيقة إلى PDF داخل المتصفح: تُرسم الصفحة كما يعرضها المتصفح (لضمان سلامة الحروف العربية) ثم تُوضع في صفحة A4
+const PDF_LIBS = ['https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
+let pdfLibs = null;
+const loadScript = (src) => new Promise((ok, ko) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = ko; document.head.appendChild(el); });
+async function savePdf(html, filename, orientation) {
+  toast('جارٍ إعداد ملف PDF…');
+  const land = orientation === 'landscape', wpx = land ? 1123 : 794, hpx = land ? 794 : 1123;
+  let fr = null;
+  try {
+    pdfLibs ||= Promise.all(PDF_LIBS.map(loadScript));
+    await pdfLibs;
+    fr = document.createElement('iframe');
+    fr.setAttribute('aria-hidden', 'true');
+    fr.style.cssText = `position:fixed;left:-20000px;top:0;width:${wpx}px;height:${hpx}px;border:0;`;
+    const loaded = new Promise((r) => (fr.onload = r));
+    fr.srcdoc = html.replace('</head>', `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap"><style>html,body{background:#fff}body{margin:0;padding:34px;width:${wpx}px;box-sizing:border-box;font-family:'Noto Naskh Arabic','Traditional Arabic',Tahoma,Arial,sans-serif}</style></head>`);
+    document.body.appendChild(fr);
+    await loaded;
+    const doc = fr.contentDocument;
+    try { await doc.fonts.ready; } catch {}
+    await new Promise((r) => setTimeout(r, 250));
+    const opts = { scale: 2, backgroundColor: '#ffffff', width: wpx, windowWidth: wpx, logging: false };
+    // الرسم بمحرّك المتصفح نفسه يحفظ تشكيل الحروف العربية والمسافات؛ وإن لم يدعمه المتصفح نعود إلى الرسم العادي
+    let canvas;
+    try { canvas = await window.html2canvas(doc.body, { ...opts, foreignObjectRendering: true }); canvas.toDataURL('image/jpeg', 0.5); }
+    catch { canvas = await window.html2canvas(doc.body, opts); }
+    const pdf = new window.jspdf.jsPDF({ orientation: land ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+    let w = pw, h = canvas.height * pw / canvas.width;
+    if (h > ph) { h = ph; w = canvas.width * ph / canvas.height; }
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (pw - w) / 2, 0, w, h);
+    await save(filename, pdf.output('blob'), 'application/pdf');
+  } catch {
+    toast('تعذّر إعداد PDF، نُزّلت نسخة للطباعة بدلاً منه.');
+    await save(filename.replace(/\.pdf$/, '.html'), html, 'text/html');
+  } finally { fr?.remove(); }
+}
 $('repCsv').addEventListener('click', () => {
   const head = ['الرقم الآلي', 'الإسم واللقب', 'المستحق', 'المستهلك', 'قيد الانتظار', 'المتبقي', 'مرض بكامل الأجر', 'مرض بنصف الأجر', 'استثنائية', 'بدون أجر', 'أيام الخصم'];
   const lines = reportData().map((r) => [r.m, r.name, r.entitled + r.carried, r.used, r.pending, r.remaining, r.sickFull, r.sickHalf, r.exc, r.unpaid, r.deduct].join(','));
@@ -705,8 +742,8 @@ $('repCsv').addEventListener('click', () => {
 $('attDownload').addEventListener('click', () => {
   const sched = scheduleFor(S.date), rows = sheetRows(S.date);
   const body = rows.map((r) => `<tr><td><b>${r.n}</b></td><td>${esc(r.e.matricule)}</td><td>${esc(r.e.name)}</td>${sched.s.map((_, i) => ['in', 'out'].map((k) => `<td>${r.st.status !== 'EXPECTED' ? '—' : esc(r.entry[`${k}${i + 1}`] || '')}</td>`).join('')).join('')}<td style="font-size:12px">${esc(r.remark)}</td></tr>`).join('');
-  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بطاقة حضور ${dateAr(S.date)}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif}header{display:flex;justify-content:space-between}.t{text-align:center;font-weight:bold;font-size:20px;line-height:1.6}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{border:1.5px solid #000;text-align:center;height:44px;font-size:15px}footer{display:flex;justify-content:space-between;margin-top:18px;font-size:13px}</style></head><body><header><div style="font-size:13px">الإدارة المركزية للموارد البشرية<br><b>إدارة العمل الاجتماعي والثقافي</b></div><div class="t">بطاقة حضور<br>التاريخ: ${dateAr(S.date)}</div><div style="width:130px"></div></header><table><thead><tr><th>ع/ر</th><th>الرقم الآلي</th><th>الإسم و اللقب</th>${sched.s.map(() => '<th>دخول</th><th>خروج</th>').join('')}<th>ملاحظات</th></tr></thead><tbody>${body}</tbody></table><footer><span>${sched.label}</span><span>إمضاء رئيس القسم: ....................</span></footer></body></html>`;
-  save(`بطاقة-حضور-${S.date}.html`, html, 'text/html');
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بطاقة حضور ${dateAr(S.date)}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif}header{display:flex;justify-content:space-between;align-items:flex-start}header>div,footer span{white-space:nowrap}.t{text-align:center;font-weight:bold;font-size:20px;line-height:1.6}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{border:1.5px solid #000;text-align:center;height:44px;font-size:15px}footer{display:flex;justify-content:space-between;margin-top:18px;font-size:13px}</style></head><body><header><div style="font-size:13px">الإدارة المركزية للموارد البشرية<br><b>إدارة العمل الاجتماعي والثقافي</b></div><div class="t">بطاقة حضور<br>التاريخ: ${dateAr(S.date)}</div><div style="width:130px"></div></header><table><thead><tr><th>ع/ر</th><th>الرقم الآلي</th><th>الإسم و اللقب</th>${sched.s.map(() => '<th>دخول</th><th>خروج</th>').join('')}<th>ملاحظات</th></tr></thead><tbody>${body}</tbody></table><footer><span>${sched.label}</span><span>إمضاء رئيس القسم: ....................</span></footer></body></html>`;
+  savePdf(html, `بطاقة-حضور-${S.date}.pdf`, 'landscape');
 });
 
 // ===== التبويبات =====
