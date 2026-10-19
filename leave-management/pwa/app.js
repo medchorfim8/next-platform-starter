@@ -1,4 +1,4 @@
-// تطبيقة «عطلي»: تسجيل دخول برمز يصل إلى البريد، رصيد العون وعطله، طلب عطلة، موافقات الرؤساء والموارد البشرية.
+// تطبيقة «عطلتي»: تسجيل دخول برمز يصل إلى البريد، رصيد العون وعطله، طلب عطلة، موافقات الرؤساء والموارد البشرية.
 // الحماية الحقيقية على الخادم (Supabase: Row Level Security + إجراءات) — الواجهة لا تقرّر شيئاً بنفسها.
 (() => {
 const CFG = window.APP_CONFIG || {};
@@ -116,7 +116,7 @@ function demoApi() {
 }
 
 const API = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase ? supabaseApi() : demoApi();
-const S = { me: null, holidays: [], myLeaves: [], balance: null };
+const S = { me: null, holidays: [], myLeaves: [], balance: null, emps: [], pendingList: [] };
 
 // ===== أدوات الواجهة =====
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 3200); }
@@ -166,7 +166,7 @@ async function loadMine() {
       <div class="t"><span>${esc(TYPES[l.type])}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
       <div class="d">من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} ${Number(l.days) <= 10 ? 'أيام' : 'يوماً'}${l.reason ? ` — ${esc(l.reason)}` : ''}</div>
       ${l.comment ? `<div class="d">التعليل: ${esc(l.comment)}</div>` : ''}
-      ${['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) ? `<div class="actions"><button class="btn sm bad" data-cancel="${l.id}">سحب الطلب</button></div>` : ''}
+      <div class="actions">${FORM906.includes(l.type) && l.status !== 'CANCELLED' ? `<button class="btn sm ghost" data-906="${l.id}">نموذج 906 (PDF)</button>` : ''}${['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) ? `<button class="btn sm bad" data-cancel="${l.id}">سحب الطلب</button>` : ''}</div>
     </div>`).join('') : '<div class="empty">لا توجد عطل مسجلة بعد.</div>';
 }
 document.addEventListener('click', (ev) => {
@@ -201,13 +201,97 @@ $('leaveForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const f = preview();
   if ($('fErr').textContent || !f.start || !f.end || f.end < f.start) return;
-  run($('fSubmit'), async () => { await API.request(f); $('sheet').hidden = true; toast('أُرسل طلبك إلى الرئيس المباشر.'); await loadMine(); })
+  run($('fSubmit'), async () => { await API.request(f); $('sheet').hidden = true; toast(FORM906.includes(f.type) ? 'أُرسل طلبك. نموذج 906 جاهز للتنزيل في سجل عطلك.' : 'أُرسل طلبك إلى الرئيس المباشر.'); await loadMine(); })
     .catch((e) => ($('fErr').textContent = e.message));
+});
+
+// ===== نموذج طلب عطلة عدد 906 (PDF) =====
+const FORM906 = ['ANNUAL', 'EXCEPTIONAL'];
+const PDF_LIBS = ['https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js', 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js'];
+let pdfLibs = null;
+const loadScript = (src) => new Promise((ok, ko) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = () => ko(new Error('تعذّر تحميل أداة PDF، تحقّق من الاتصال')); document.head.appendChild(el); });
+// الشعار يُضمَّن في الوثيقة كبيانات (data URL) حتى يظهر في ملف PDF
+let logoData = null;
+const getLogo = () => (logoData ||= fetch('icons/logo.png').then((r) => r.blob()).then((b) => new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); })).catch(() => ''));
+function html906(l, e, logo) {
+  const isAnn = l.type === 'ANNUAL';
+  const nature = isAnn ? 'عطلة استراحة' : `عطلة استثنائية${l.reason ? ` (${l.reason})` : ''}`;
+  const titre = isAnn ? String(l.title_year || l.start_date.slice(0, 4)) : (l.reason || '');
+  const days = Number(l.days);
+  const mgr = (l.log || []).find((x) => x.from === 'PENDING_MANAGER');
+  const avis = mgr ? (mgr.to === 'REJECTED' ? 'غير موافق' : mgr.to === 'RETURNED' ? 'مُرجع للتعديل' : 'موافق') + (mgr.comment ? ` — ${mgr.comment}` : '') : '';
+  const signDate = dmy((l.created_at || new Date().toISOString()).slice(0, 10));
+  const box = (on) => `<span class="box">${on ? 'X' : ''}</span>`;
+  const row = (ar, fr, val) => `<div class="r"><span class="fr">${fr}</span><span class="v">${esc(val)}</span><span class="ar">${ar}</span></div>`;
+  return `<!doctype html><html lang="ar"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap"><style>
+body{margin:0;padding:34px;width:794px;box-sizing:border-box;background:#fff;font-family:'Noto Naskh Arabic','Traditional Arabic',Tahoma,Arial,sans-serif;font-size:16px;color:#000}
+.page{border:1.5px solid #7a4a86;border-radius:14px;padding:20px 28px}.c{text-align:center}.no{font-size:18px;margin:6px 0 14px}
+.org{display:flex;justify-content:space-between;font-size:18px;margin-bottom:10px;white-space:nowrap}h1{text-align:center;font-size:24px;margin:10px 0}
+.types{display:grid;justify-content:center;gap:8px;font-size:19px;font-weight:bold;margin-bottom:22px}.types div{display:grid;grid-template-columns:200px 34px 200px;align-items:center;gap:14px}
+.types .fr{text-align:left}.types .ar{text-align:right;direction:rtl}.box{display:inline-block;width:20px;height:20px;border:1.5px solid #000;text-align:center;line-height:20px;font-weight:bold}
+.r{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:end;margin:13px 0}.r .fr{text-align:left;white-space:nowrap}.r .ar{direction:rtl;white-space:nowrap}
+.r .v{border-bottom:1px dotted #000;text-align:center;min-height:22px;font-weight:bold;direction:rtl}.sig{text-align:center;margin:16px 0 40px}
+.notes{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:13px;margin-top:30px}.notes .ar{direction:rtl;text-align:right}
+</style></head><body><div class="page">
+${logo ? `<div class="c"><img src="${logo}" style="width:120px" alt=""></div>` : ''}<div class="no c">N° 906 &nbsp; رقم</div>
+<div class="org"><span>Office National des postes</span><span dir="rtl">الديوان الوطني للبريد</span></div>
+<h1>Demande de Congé <small>(1)</small> &nbsp; طلب عطلة</h1>
+<div class="types"><div><span class="fr">Congé de Repos</span>${box(isAnn)}<span class="ar">عطلة إستراحة</span></div><div><span class="fr">Congé exceptionnel</span>${box(!isAnn)}<span class="ar">عطلة إستثنائية</span></div></div>
+${row('إني الممضي أسفله', 'Je soussigné', e.name)}${row('الرتبة', 'Grade', e.grade || '')}${row('الرقم الميكانوغرافي', 'Matricule', l.matricule)}${row('تاريخ الإنتداب', 'Date de recrutement', '')}
+${row('أطلب الحصول على (2)', "Demande de bénéficier d'un (2)", nature)}${row('لمدة', "D'une durée de", `${fmt(days)} ${days === 1 ? 'يوم' : days <= 10 ? 'أيام' : 'يوماً'}`)}${row('بعنوان (3)', 'au titre de (3)', titre)}
+${row('إبتداء من', 'A compter du', dmy(l.start_date))}${row('إلى (بدخول الغاية)', 'au (inclus)', dmy(l.end_date))}${row('لقضائها بالعنوان التالي', 'Adresse pendant le congé', l.address || '')}
+${row('بتونس في', 'A Tunis le', signDate)}<div class="sig">الإمضاء</div>
+${row('رأي الرئيس المباشر', 'Avis du chef Immédiat', avis)}${row('إسم النائب (عند الإقتضاء)', 'Nom du remplaçant (éventuellement)', l.interim || '')}
+<div class="sig">التاريخ و الإمضاء${mgr ? ` — ${dmy(String(mgr.at).slice(0, 10))}` : ''}</div>
+<div class="notes"><span>(1) Mettre une croix dans la case correspondante</span><span class="ar">(1) وضع علامة X في المربع المناسب</span>
+<span>(2) Ecrire la nature du congé (repos ou exceptionnel)</span><span class="ar">(2) ذكر نوعية العطلة (إستراحة أو إستثنائية)</span>
+<span>(3) Indiquer l'année à laquelle se rapporte le congé</span><span class="ar">(3) ذكر سنة إستحقاق عطلة الإستراحة</span></div></div></body></html>`;
+}
+async function pdf906(l, btn) {
+  const e = l.matricule === S.me.matricule ? S.me : (S.emps.find((x) => x.matricule === l.matricule) || { name: l.matricule });
+  await run(btn, async () => {
+    pdfLibs ||= Promise.all(PDF_LIBS.map(loadScript)).catch((err) => { pdfLibs = null; throw err; });
+    await pdfLibs;
+    const fr = document.createElement('iframe');
+    fr.setAttribute('aria-hidden', 'true');
+    fr.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;border:0;';
+    const loaded = new Promise((r) => (fr.onload = r));
+    fr.srcdoc = html906(l, e, await getLogo());
+    document.body.appendChild(fr);
+    try {
+      await loaded;
+      const doc = fr.contentDocument;
+      try { await doc.fonts.ready; } catch {}
+      await Promise.all([...doc.images].map((im) => im.complete ? 0 : new Promise((r) => (im.onload = im.onerror = r))));
+      const opts = { scale: 2, backgroundColor: '#ffffff', width: 794, windowWidth: 794, logging: false, useCORS: true };
+      let canvas;
+      try { canvas = await window.html2canvas(doc.body, { ...opts, foreignObjectRendering: true }); canvas.toDataURL('image/jpeg', 0.5); }
+      catch { canvas = await window.html2canvas(doc.body, opts); }
+      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+      let w = pw, h = canvas.height * pw / canvas.width; if (h > ph) { h = ph; w = canvas.width * ph / canvas.height; }
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (pw - w) / 2, 0, w, h);
+      const name = `conge-906-${l.matricule}-${l.start_date}.pdf`;
+      const file = new File([pdf.output('blob')], name, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'نموذج طلب عطلة 906' }); return; } catch (err) { if (err.name === 'AbortError') return; }
+      }
+      const url = URL.createObjectURL(file), a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } finally { fr.remove(); }
+  });
+}
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-906]'); if (!b) return;
+  const l = [...S.myLeaves, ...S.pendingList].find((x) => String(x.id) === b.dataset['906']);
+  if (l) pdf906(l, b).catch(() => {});
 });
 
 // ===== الموافقات =====
 async function loadApprovals() {
   const [list, emps] = await Promise.all([API.pending(), API.employees()]);
+  S.emps = emps; S.pendingList = list;
   const name = (m) => emps.find((e) => e.matricule === m)?.name || m;
   const mine = list.filter((l) => S.me.role === 'hr' || l.status === 'PENDING_MANAGER');
   $('apCount').textContent = mine.length ? `(${mine.length})` : '';
@@ -219,7 +303,7 @@ async function loadApprovals() {
       ${bals[l.matricule] ? `<div class="d">رصيده الحالي: ${fmt(bals[l.matricule].remaining)} يوماً (محسوب معه هذا الطلب)</div>` : ''}
       ${l.note ? `<div class="d">ملاحظة: ${esc(l.note)}</div>` : ''}
       <input id="c_${l.id}" placeholder="التعليل (إجباري عند الرفض أو الإرجاع)">
-      <div class="actions"><button class="btn sm ok" data-dec="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة نهائية'}</button>
+      <div class="actions">${FORM906.includes(l.type) ? `<button class="btn sm ghost" data-906="${l.id}">906</button>` : ''}<button class="btn sm ok" data-dec="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة نهائية'}</button>
         <button class="btn sm ghost" data-dec="return" data-id="${l.id}">إرجاع</button><button class="btn sm bad" data-dec="reject" data-id="${l.id}">رفض</button></div>
     </div>`).join('') : '<div class="empty">لا توجد طلبات في انتظار قرارك.</div>';
 }
