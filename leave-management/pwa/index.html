@@ -37,7 +37,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top .logo img { width: 100%; height: 100%; object-fit: contain; }
 .top h1 { margin: 0; font-size: 1.15rem; line-height: 1.3; }
 .top .sub { color: var(--yellow); font-size: .8rem; }
-.top .out { margin-inline-start: auto; background: transparent; border: 1px solid rgba(255,255,255,.35); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: .85rem; }
+.top .out + .out { margin-inline-start: 0; }
+.top .out { white-space: nowrap; margin-inline-start: auto; background: transparent; border: 1px solid rgba(255,255,255,.35); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: .85rem; }
 main { padding: 16px 16px calc(96px + var(--safe-b)); max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
 .hero { background: var(--navy); color: #fff; border: 0; display: grid; gap: 4px; }
@@ -114,24 +115,27 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
     <h1>عطلتي</h1>
     <div class="note" id="unitName"></div>
   </div>
-  <div class="card form" id="stepEmail">
-    <label>بريدك الإلكتروني المهني<input type="email" id="email" autocomplete="email" inputmode="email" placeholder="name@example.tn" required></label>
-    <button class="btn navy" id="sendCode">أرسل لي رمز الدخول</button>
+  <form class="card form" id="stepLogin">
+    <label>الرقم الميكانوغرافي<input id="mat" autocomplete="username" autocapitalize="characters" placeholder="مثال: 61452" required></label>
+    <label>الرقم السري<input class="code" id="pin" type="password" autocomplete="current-password" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+    <button class="btn navy" type="submit" id="loginBtn">دخول</button>
     <div class="err" id="loginErr"></div>
-  </div>
-  <div class="card form" id="stepCode" hidden>
-    <div class="note">أرسلنا رمزاً من 6 أرقام إلى <b id="sentTo"></b></div>
-    <input class="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
-    <button class="btn navy" id="verify">دخول</button>
-    <button class="btn ghost" id="back">تغيير البريد</button>
-    <div class="err" id="codeErr"></div>
-  </div>
+    <div class="note">نسيت رقمك السري؟ اتصل بالموارد البشرية لتعطيك رقماً جديداً.</div>
+  </form>
+  <form class="card form" id="stepPin" hidden>
+    <div class="note" id="pinNote">لأمان حسابك، اختر رقماً سرياً جديداً من 6 أرقام لا يعرفه غيرك.</div>
+    <label>الرقم السري الجديد<input class="code" id="pin1" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+    <label>أعد كتابته<input class="code" id="pin2" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="••••••" required></label>
+    <button class="btn navy" type="submit" id="pinBtn">حفظ الرقم السري</button>
+    <button class="btn ghost" type="button" id="pinCancel" hidden>رجوع</button>
+    <div class="err" id="pinErr"></div>
+  </form>
   <div class="demo" id="demoBox" hidden>
-    <b>وضع تجريبي:</b> التطبيقة غير مربوطة بقاعدة بيانات بعد. ادخل بأحد الحسابات التجريبية (أي رمز يُقبل):
+    <b>وضع تجريبي:</b> التطبيقة غير مربوطة بقاعدة بيانات بعد. ادخل بأحد الحسابات التجريبية (الرقم السري لكل الحسابات: 123456):
     <div class="actions" style="margin-top:8px">
-      <button class="btn sm ghost" data-demo="agent@demo.tn">عون</button>
-      <button class="btn sm ghost" data-demo="chef@demo.tn">رئيس قسم</button>
-      <button class="btn sm ghost" data-demo="rh@demo.tn">موارد بشرية</button>
+      <button class="btn sm ghost" data-demo="10002">عون</button>
+      <button class="btn sm ghost" data-demo="10001">رئيس قسم</button>
+      <button class="btn sm ghost" data-demo="RH-001">موارد بشرية</button>
     </div>
   </div>
 </section>
@@ -142,7 +146,7 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
     <div class="row">
       <div class="logo"><img src="icons/logo.png" alt=""></div>
       <div><h1 id="hello">مرحباً</h1><div class="sub" id="who"></div></div>
-      <button class="out" id="logout">خروج</button>
+      <button class="out" id="changePin">الرقم السري</button><button class="out" id="logout">خروج</button>
     </div>
   </header>
 
@@ -183,7 +187,6 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
     <form class="card form" id="empForm">
       <div class="two"><label>الرقم الآلي<input id="eMat" required inputmode="numeric"></label><label>الرتبة<input id="eGrade"></label></div>
       <label>الإسم واللقب<input id="eName" required></label>
-      <label>البريد الإلكتروني<input id="eEmail" type="email" required></label>
       <label>الدور<select id="eRole"><option value="agent">عون</option><option value="manager">رئيس مباشر</option><option value="hr">موارد بشرية</option></select></label>
       <button class="btn navy" type="submit">إضافة</button>
     </form>

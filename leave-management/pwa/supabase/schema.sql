@@ -1,15 +1,16 @@
 -- قاعدة بيانات تطبيقة العطل (Supabase / PostgreSQL)
 -- تُنفَّذ مرة واحدة من: Supabase ← SQL Editor ← New query ← لصق ← Run
 -- الحماية: كل عون لا يقرأ إلا سطوره (Row Level Security)، والرئيس المباشر والموارد البشرية يقرؤون الكل.
+-- الدخول: الرقم الميكانوغرافي + رقم سري من 6 أرقام (حساب Supabase داخلي بعنوان <الرقم>@otlati.local).
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ===== الجداول =====
 create table if not exists employees (
   matricule text primary key,                       -- الرقم الآلي
   name      text not null,                          -- الإسم واللقب
   grade     text,                                   -- الرتبة
-  email     text unique,                            -- البريد الذي يسجّل به الدخول
+  email     text,                                   -- اختياري (للإعلام فقط، لا يُستعمل للدخول)
   role      text not null default 'agent' check (role in ('agent', 'manager', 'hr')),
   active    boolean not null default true,
   sort      int not null default 99
@@ -49,15 +50,54 @@ create table if not exists leaves (
 create index if not exists leaves_matricule on leaves (matricule, start_date);
 
 -- ===== هوية المستخدم المتصل =====
+-- البريد الداخلي المرتبط بالرقم الميكانوغرافي (لا يصله أي بريد، يُستعمل فقط كمعرّف دخول)
+create or replace function login_email(p_matricule text) returns text
+language sql immutable as $$ select lower(regexp_replace(p_matricule, '[^A-Za-z0-9-]', '', 'g')) || '@otlati.local' $$;
+
 create or replace function my_matricule() returns text
 language sql stable security definer set search_path = public as $$
-  select matricule from employees where lower(email) = lower(auth.email()) and active limit 1
+  select matricule from employees where login_email(matricule) = lower(auth.email()) and active limit 1
 $$;
 
 create or replace function my_role() returns text
 language sql stable security definer set search_path = public as $$
-  select coalesce((select role from employees where lower(email) = lower(auth.email()) and active limit 1), 'none')
+  select coalesce((select role from employees where login_email(matricule) = lower(auth.email()) and active limit 1), 'none')
 $$;
+
+-- ===== الرقم السري =====
+-- admin_set_pin: يُنشئ حساب الدخول أو يغيّر رقمه السري (ويُخرج العون من كل أجهزته).
+-- لا يستدعيها إلا مدير قاعدة البيانات من SQL Editor، أو الموارد البشرية عبر set_pin.
+create or replace function admin_set_pin(p_matricule text, p_pin text) returns void
+language plpgsql security definer set search_path = public, auth, extensions as $$
+declare uid uuid; em text := login_email(p_matricule);
+begin
+  if p_pin !~ '^[0-9]{6}$' then raise exception 'الرقم السري يتكوّن من 6 أرقام'; end if;
+  if not exists (select 1 from employees where matricule = p_matricule) then raise exception 'رقم ميكانوغرافي غير موجود'; end if;
+  select id into uid from auth.users where email = em;
+  if uid is null then
+    uid := gen_random_uuid();
+    insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+                            raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+                            confirmation_token, recovery_token, email_change_token_new, email_change)
+    values ('00000000-0000-0000-0000-000000000000', uid, 'authenticated', 'authenticated', em, crypt(p_pin, gen_salt('bf')), now(),
+            '{"provider":"email","providers":["email"]}', '{"must_change":true}', now(), now(), '', '', '', '');
+    insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+    values (gen_random_uuid(), uid, uid::text, jsonb_build_object('sub', uid::text, 'email', em, 'email_verified', true), 'email', now(), now(), now());
+  else
+    update auth.users set encrypted_password = crypt(p_pin, gen_salt('bf')),
+           raw_user_meta_data = coalesce(raw_user_meta_data, '{}') || '{"must_change":true}', updated_at = now()
+     where id = uid;
+    delete from auth.sessions where user_id = uid;
+  end if;
+end $$;
+
+-- الموارد البشرية تعطي رقماً سرياً أولياً أو جديداً (عند النسيان)؛ العون يغيّره بنفسه عند أول دخول.
+create or replace function set_pin(p_matricule text, p_pin text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if my_role() <> 'hr' then raise exception 'هذه العملية للموارد البشرية فقط'; end if;
+  perform admin_set_pin(p_matricule, p_pin);
+end $$;
 
 create or replace function is_staff() returns boolean
 language sql stable as $$ select my_role() in ('manager', 'hr') $$;
@@ -221,5 +261,6 @@ create policy hol_read on holidays for select to authenticated using (true);
 drop policy if exists hol_write on holidays;
 create policy hol_write on holidays for all to authenticated using (my_role() = 'hr') with check (my_role() = 'hr');
 
-revoke execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets from public, anon;
-grant execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets to authenticated;
+revoke execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets, set_pin from public, anon;
+grant execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets, set_pin to authenticated;
+revoke execute on function admin_set_pin from public, anon, authenticated;

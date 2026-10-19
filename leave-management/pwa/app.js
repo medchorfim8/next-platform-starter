@@ -1,4 +1,4 @@
-// تطبيقة «عطلتي»: تسجيل دخول برمز يصل إلى البريد، رصيد العون وعطله، طلب عطلة، موافقات الرؤساء والموارد البشرية.
+// تطبيقة «عطلتي»: الدخول بالرقم الميكانوغرافي ورقم سري، رصيد العون وعطله، طلب عطلة، موافقات الرؤساء والموارد البشرية.
 // الحماية الحقيقية على الخادم (Supabase: Row Level Security + إجراءات) — الواجهة لا تقرّر شيئاً بنفسها.
 (() => {
 const CFG = window.APP_CONFIG || {};
@@ -8,6 +8,9 @@ const fmt = (n) => (Math.round(Number(n || 0) * 10) / 10).toString().replace('.'
 const dmy = (s) => s.split('-').reverse().join('/');
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const YEAR = new Date().getFullYear();
+// معرّف الدخول الداخلي (نفس الدالة login_email في قاعدة البيانات)
+const loginEmail = (m) => String(m).replace(/[^A-Za-z0-9-]/g, '').toLowerCase() + '@otlati.local';
+const randomPin = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, '0');
 
 const TYPES = {
   ANNUAL: 'عطلة سنوية للاستراحة', EXCEPTIONAL: 'عطلة استثنائية', SICK: 'عطلة مرض عادي', UNPAID: 'عطلة بدون أجر',
@@ -54,11 +57,19 @@ function supabaseApi() {
   const ok = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
   return {
     demo: false,
-    async session() { return (await sb.auth.getSession()).data.session?.user?.email || null; },
-    async sendCode(email) { ok(await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })); },
-    async verify(email, token) { ok(await sb.auth.verifyOtp({ email, token, type: 'email' })); },
+    async session() { return !!(await sb.auth.getSession()).data.session; },
+    async login(m, pin) {
+      const { error } = await sb.auth.signInWithPassword({ email: loginEmail(m), password: pin });
+      if (error) throw new Error(/invalid/i.test(error.message) ? 'الرقم الميكانوغرافي أو الرقم السري غير صحيح.' : error.message);
+    },
+    async mustChange() { return !!(await sb.auth.getUser()).data.user?.user_metadata?.must_change; },
+    async changePin(pin) {
+      const { error } = await sb.auth.updateUser({ password: pin, data: { must_change: false } });
+      if (error) throw new Error(/different/i.test(error.message) ? 'اختر رقماً مختلفاً عن الرقم الحالي.' : error.message);
+    },
+    async setPin(m, pin) { ok(await sb.rpc('set_pin', { p_matricule: m, p_pin: pin })); },
     async logout() { await sb.auth.signOut(); },
-    async me(email) { return (ok(await sb.from('employees').select('*').ilike('email', email)) || [])[0] || null; },
+    async me() { const m = ok(await sb.rpc('my_matricule')); return m ? (ok(await sb.from('employees').select('*').eq('matricule', m)) || [])[0] || null : null; },
     async balanceRows(m) { return ok(await sb.from('balances').select('*').eq('matricule', m)); },
     async leaves(m) { let q = sb.from('leaves').select('*').order('start_date', { ascending: false }); if (m) q = q.eq('matricule', m); return ok(await q); },
     async pending() { return ok(await sb.from('leaves').select('*').in('status', ['PENDING_MANAGER', 'PENDING_HR']).order('start_date')); },
@@ -75,7 +86,7 @@ function supabaseApi() {
 }
 
 function demoApi() {
-  const KEY = 'demo-conges-v5';
+  const KEY = 'demo-conges-v6';
   const seed = () => ({
     employees: [
       { matricule: 'RH-001', name: 'الموارد البشرية', email: 'rh@demo.tn', role: 'hr', sort: 0 },
@@ -92,17 +103,20 @@ function demoApi() {
       { id: 'd2', matricule: '10003', type: 'EXCEPTIONAL', reason: 'اجتياز امتحان', start_date: `${YEAR}-11-03`, end_date: `${YEAR}-11-04`, days: 2, status: 'PENDING_MANAGER', log: [] },
     ],
     holidays: [{ day: `${YEAR}-12-17`, label: 'عيد الثورة' }],
+    pins: { 'RH-001': { pin: '123456' }, 10001: { pin: '123456' }, 10002: { pin: '123456' }, 10003: { pin: '123456' } },
     session: null,
   });
   let db; try { db = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch { db = seed(); }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
-  const me = () => db.employees.find((e) => e.email === db.session);
+  const me = () => db.employees.find((e) => e.matricule === db.session);
   const bal = (m, y) => annualBuckets(db.leaves.filter((l) => l.matricule === m), db.balances.filter((b) => b.matricule === m), y);
   return {
     demo: true,
-    async session() { return db.session; },
-    async sendCode(email) { if (!db.employees.some((e) => e.email === email)) throw new Error('هذا البريد غير مسجّل في الوضع التجريبي'); },
-    async verify(email) { db.session = email; save(); },
+    async session() { return !!db.session; },
+    async login(m, pin) { const p = db.pins[m]; if (!p || p.pin !== pin) throw new Error('الرقم الميكانوغرافي أو الرقم السري غير صحيح.'); db.session = m; save(); },
+    async mustChange() { return !!db.pins[db.session]?.must; },
+    async changePin(pin) { db.pins[db.session] = { pin, must: false }; save(); },
+    async setPin(m, pin) { if (me().role !== 'hr') throw new Error('هذه العملية للموارد البشرية فقط'); db.pins[m] = { pin, must: true }; save(); },
     async logout() { db.session = null; save(); },
     async me() { return me() || null; },
     async balanceRows(m) { return db.balances.filter((b) => b.matricule === m); },
@@ -150,24 +164,28 @@ function go(page) {
 }
 
 // ===== تسجيل الدخول =====
-let pendingEmail = '';
 $('unitName').textContent = CFG.UNIT || '';
 $('demoBox').hidden = !API.demo;
-$('sendCode').onclick = () => {
-  const email = $('email').value.trim().toLowerCase();
+const loginStep = (id) => ['stepLogin', 'stepPin'].forEach((v) => ($(v).hidden = v !== id));
+$('stepLogin').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const m = $('mat').value.trim(), pin = $('pin').value.replace(/\D/g, '');
   $('loginErr').textContent = '';
-  if (!/^\S+@\S+\.\S+$/.test(email)) { $('loginErr').textContent = 'أدخل بريداً إلكترونياً صحيحاً.'; return; }
-  run($('sendCode'), async () => { await API.sendCode(email); pendingEmail = email; $('sentTo').textContent = email; $('stepEmail').hidden = true; $('stepCode').hidden = false; $('code').focus(); })
-    .catch((e) => ($('loginErr').textContent = e.message));
-};
-$('back').onclick = () => { $('stepCode').hidden = true; $('stepEmail').hidden = false; };
-$('verify').onclick = () => {
-  const token = $('code').value.replace(/\D/g, '');
-  if (token.length !== 6 && !API.demo) { $('codeErr').textContent = 'الرمز مكوّن من 6 أرقام.'; return; }
-  run($('verify'), async () => { await API.verify(pendingEmail, token); await start(); }).catch((e) => ($('codeErr').textContent = 'رمز غير صحيح أو منتهي الصلاحية. ' + e.message));
-};
-$('code').addEventListener('input', () => { if ($('code').value.replace(/\D/g, '').length === 6) $('verify').click(); });
-document.querySelectorAll('[data-demo]').forEach((b) => (b.onclick = async () => { await API.verify(b.dataset.demo); await start(); }));
+  if (!m || pin.length !== 6) { $('loginErr').textContent = 'أدخل رقمك الميكانوغرافي ورقمك السري (6 أرقام).'; return; }
+  run($('loginBtn'), async () => { await API.login(m, pin); $('pin').value = ''; await start(); }).catch((e) => ($('loginErr').textContent = e.message));
+});
+$('stepPin').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const p1 = $('pin1').value, p2 = $('pin2').value;
+  $('pinErr').textContent = '';
+  if (!/^\d{6}$/.test(p1)) { $('pinErr').textContent = 'الرقم السري يتكوّن من 6 أرقام.'; return; }
+  if (/^(\d)\1{5}$/.test(p1) || '0123456789'.includes(p1) || '9876543210'.includes(p1)) { $('pinErr').textContent = 'رقم سهل التخمين، اختر رقماً آخر.'; return; }
+  if (p1 !== p2) { $('pinErr').textContent = 'الرقمان غير متطابقين.'; return; }
+  run($('pinBtn'), async () => { await API.changePin(p1); $('pin1').value = $('pin2').value = ''; toast('حُفظ رقمك السري الجديد.'); await start(); }).catch((e) => ($('pinErr').textContent = e.message));
+});
+$('changePin').onclick = () => { show('vLogin'); loginStep('stepPin'); $('pinNote').textContent = 'اختر رقماً سرياً جديداً من 6 أرقام.'; $('pinCancel').hidden = false; };
+$('pinCancel').onclick = () => start();
+document.querySelectorAll('[data-demo]').forEach((b) => (b.onclick = async () => { await API.login(b.dataset.demo, '123456'); await start(); }));
 $('logout').onclick = async () => { await API.logout(); location.reload(); };
 
 // ===== الصفحة الرئيسية للعون =====
@@ -368,24 +386,33 @@ async function loadStaff() {
     const op = (y) => { const x = rows.find((b) => +b.year === y); return x ? Number(x.opening) : 30; };
     return `<div class="item">
       <div class="t"><span>${esc(e.name)} <span class="d">· ${esc(e.matricule)}</span></span><span class="pill p-RETURNED">${ROLE[e.role]}</span></div>
-      <div class="d">${e.email ? esc(e.email) : '<span class="err">لا يوجد بريد: لا يستطيع الدخول</span>'}</div>
+      <div class="d">الدخول: الرقم الميكانوغرافي <b>${esc(e.matricule)}</b> + رقم سري</div>
       <div class="d">الرصيد المتبقي: <b>${fmt(r.remaining)}</b> يوماً (${r.buckets.map((b) => `${fmt(b.remaining)} من ${b.year}`).join('، ')})</div>
       <div class="three">${years.map((y) => `<label>متاح ${y}<input type="number" step="0.5" min="0" max="30" value="${op(y)}" id="bo_${esc(e.matricule)}_${y}"></label>`).join('')}</div>
       <div class="d hint">«متاح» = ما بقي من استحقاق تلك السنة قبل بدء العمل بالتطبيقة (30 إن لم يستهلك منها شيئاً).</div>
-      <div class="actions"><button class="btn sm navy" data-bal="${esc(e.matricule)}">حفظ الرصيد</button><button class="btn sm ghost" data-mail="${esc(e.matricule)}">تعديل البريد</button></div>
+      <div class="actions"><button class="btn sm navy" data-bal="${esc(e.matricule)}">حفظ الرصيد</button><button class="btn sm ghost" data-pin="${esc(e.matricule)}">رقم سري جديد</button></div>
     </div>`;
   }).join('');
 }
 document.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-bal]');
   if (b) { const m = b.dataset.bal; run(b, async () => { for (const y of [YEAR - 2, YEAR - 1, YEAR]) await API.saveBalance(m, y, Math.min(30, Math.max(0, +$(`bo_${m}_${y}`).value))); toast('حُفظ الرصيد.'); await loadStaff(); }); }
-  const e = ev.target.closest('[data-mail]');
-  if (e) { const m = e.dataset.mail, email = window.prompt('البريد الإلكتروني للعون'); if (email) run(e, async () => { await API.updateEmployee(m, { email: email.trim().toLowerCase() }); toast('حُفظ البريد.'); await loadStaff(); }); }
+  const p = ev.target.closest('[data-pin]');
+  if (p) {
+    const m = p.dataset.pin;
+    if (!window.confirm(`إعطاء رقم سري جديد للعون ${m}؟ سيُلغى رقمه الحالي ويُخرج من كل أجهزته.`)) return;
+    const pin = randomPin();
+    run(p, async () => { await API.setPin(m, pin); window.alert(`الرقم السري الجديد للعون ${m}:\n\n${pin}\n\nأعطه إياه شخصياً؛ سيُطلب منه تغييره عند أول دخول.`); });
+  }
 });
 $('empForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
-  const e = { matricule: $('eMat').value.trim(), name: $('eName').value.trim(), grade: $('eGrade').value.trim() || null, email: $('eEmail').value.trim().toLowerCase(), role: $('eRole').value };
-  run(ev.submitter, async () => { await API.addEmployee(e); toast('أُضيف العون. يمكنه الآن الدخول ببريده.'); ev.target.reset(); await loadStaff(); });
+  const e = { matricule: $('eMat').value.trim(), name: $('eName').value.trim(), grade: $('eGrade').value.trim() || null, role: $('eRole').value };
+  run(ev.submitter, async () => {
+    await API.addEmployee(e); const pin = randomPin(); await API.setPin(e.matricule, pin);
+    window.alert(`أُضيف العون ${e.name}.\n\nالدخول: ${e.matricule}\nالرقم السري الأولي: ${pin}\n\nأعطه إياه شخصياً؛ سيُطلب منه تغييره عند أول دخول.`);
+    ev.target.reset(); await loadStaff();
+  });
 });
 
 $('seeAll').onclick = () => go('pHistory');
@@ -404,11 +431,11 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 
 // ===== البدء =====
 async function start() {
-  const email = await API.session();
-  if (!email) { show('vLogin'); return; }
+  if (!(await API.session())) { show('vLogin'); loginStep('stepLogin'); return; }
   try {
-    S.me = await API.me(email);
-    if (!S.me) { show('vLogin'); $('stepEmail').hidden = false; $('stepCode').hidden = true; $('loginErr').textContent = 'هذا البريد غير مسجّل لدى الموارد البشرية. اتصل بهم لإضافته.'; await API.logout(); return; }
+    if (await API.mustChange()) { show('vLogin'); loginStep('stepPin'); $('pinCancel').hidden = true; return; }
+    S.me = await API.me();
+    if (!S.me) { await API.logout(); show('vLogin'); loginStep('stepLogin'); $('loginErr').textContent = 'هذا الحساب غير مفعّل. اتصل بالموارد البشرية.'; return; }
     S.holidays = await API.holidays();
     show('vApp');
     $('hello').textContent = `مرحباً ${S.me.name.split(' ')[0]}`;
