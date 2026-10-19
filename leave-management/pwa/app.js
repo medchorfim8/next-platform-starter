@@ -174,14 +174,15 @@ $('logout').onclick = async () => { await API.logout(); location.reload(); };
 async function loadMine() {
   const m = S.me.matricule;
   const [rows, leaves] = await Promise.all([API.balanceRows(m), API.leaves(m)]);
-  const bal = annualBuckets(leaves, rows, YEAR);
+  const bal = annualBuckets(leaves, rows, YEAR), nxt = annualBuckets(leaves, rows, YEAR + 1);
   const lastYear = Math.max(YEAR, ...leaves.map((l) => +l.start_date.slice(0, 4)));
   const allocAll = annualBuckets(leaves, rows, lastYear).alloc;
   S.balance = bal; S.balRows = rows; S.myLeaves = leaves;
   $('yearLbl').textContent = `${YEAR - 2}–${YEAR}`;
   $('remaining').textContent = fmt(bal.remaining);
   $('balDetail').innerHTML = bal.buckets.map((b) => `<span class="yr${b.year === YEAR - 2 ? ' old' : ''}"><small>${b.year}</small><b>${fmt(b.remaining)}</b></span>`).join('') +
-    `<div class="hint">يُخصم من أقدم سنة أولاً. ما يبقى من ${YEAR - 2} يسقط في 1 جانفي ${YEAR + 1}.</div>`;
+    `<div class="hint">يُخصم من أقدم سنة أولاً. ما يبقى من ${YEAR - 2} يسقط في 1 جانفي ${YEAR + 1}.</div>` +
+    `<div class="hint">ابتداءً من 1 جانفي ${YEAR + 1}: ${nxt.buckets.map((b) => `${b.year} (${fmt(b.remaining)})`).join(' + ')} = <b>${fmt(nxt.remaining)}</b> يوماً، تتمتّع بها كاملة إلى 31 ديسمبر ${YEAR + 1}.</div>`;
   $('stUsed').textContent = fmt(leaves.filter((l) => l.type === 'ANNUAL' && l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR))).reduce((s, l) => s + Number(l.days), 0));
   $('stPending').textContent = fmt(bal.pending);
   $('stSick').textContent = fmt(leaves.filter((l) => l.type === 'SICK' && l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR))).reduce((s, l) => s + Number(l.days), 0));

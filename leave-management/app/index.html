@@ -410,13 +410,14 @@ function fillAgentSelect() {
 function renderAgent() {
   const m = S.agent;
   if (!m) { $('balanceCards').innerHTML = '<div class="empty">أضف الأعوان من تبويب الإعدادات.</div>'; $('historyBody').innerHTML = ''; return; }
-  const b = balanceOf(m, S.year);
+  const b = balanceOf(m, S.year), nb = balanceOf(m, S.year + 1);
   const y0 = `${S.year}-01-01`, y1 = `${S.year}-12-31`;
   const approved = leavesOf(m).filter((l) => l.status === 'APPROVED');
   const sumType = (t) => approved.filter((l) => l.type === t).reduce((s, l) => s + overlapDays(l, y0, y1), 0);
   const sickWin = approved.filter((l) => l.type === 'SICK').reduce((s, l) => s + overlapDays(l, iso(new Date(D(today()).getTime() - 364 * DAY)), today()), 0);
   $('balanceCards').innerHTML = [
     ['الرصيد السنوي المتبقي', fmt(b.remaining), `${bucketsText(b)} — يُخصم من الأقدم، ويسقط ما بقي من ${S.year - 2} في 1 جانفي ${S.year + 1}`],
+    [`الرصيد ابتداءً من 1 جانفي ${S.year + 1}`, fmt(nb.remaining), `${bucketsText(nb)} — يُتمتّع به كاملاً إلى 31 ديسمبر ${S.year + 1}`],
     ['مرض خلال 365 يوماً', fmt(sickWin), sickWin <= SICK_FULL ? `${fmt(SICK_FULL - sickWin)} يوماً متبقية بكامل الأجر` : 'تجاوز الشهرين: نصف الأجر'],
     ['عطل استثنائية', `${fmt(sumType('EXCEPTIONAL'))} / ${TYPES.EXCEPTIONAL.perYear}`, 'خلال السنة'],
     ['بدون أجر', fmt(sumType('UNPAID')), 'يوماً خلال السنة'],
