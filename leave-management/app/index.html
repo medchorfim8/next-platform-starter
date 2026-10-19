@@ -112,6 +112,7 @@ table.sheet tr.leave td { background: var(--accent-soft); }
       <div class="row admin-only" style="justify-content: space-between;">
         <label>العون<select id="agentSel"></select></label>
         <label>السنة<select id="yearSel"></select></label>
+        <button class="btn ghost" id="stmtBtn" type="button" title="كشف فردي يُرسل للعون أو يُطبع له">كشف رصيد العون (PDF)</button>
       </div>
       <h2 id="agentTitle" hidden></h2>
       <div class="cards" id="balanceCards" style="margin-top:14px"></div>
@@ -734,6 +735,31 @@ async function savePdf(html, filename, orientation) {
     await save(filename.replace(/\.pdf$/, '.html'), html, 'text/html');
   } finally { fr?.remove(); }
 }
+// كشف رصيد فردي: يُسلَّم للعون (ورقياً أو عبر البريد) فيطّلع على رصيده ووضعيته دون النفاذ إلى ملفات زملائه
+function printStatement(m, year) {
+  const e = S.employees.find((x) => x.matricule === m); if (!e) return;
+  const b = balanceOf(m, year), y0 = `${year}-01-01`, y1 = `${year}-12-31`;
+  const ls = leavesOf(m).filter((l) => l.start <= y1 && l.end >= y0 && l.status !== 'CANCELLED').sort((a, c) => a.start.localeCompare(c.start));
+  const ap = ls.filter((l) => l.status === 'APPROVED');
+  const sum = (t) => ap.filter((l) => l.type === t).reduce((s2, l) => s2 + l.days, 0);
+  const sick = ap.filter((l) => l.type === 'SICK').map(paySplit).reduce((a, p) => ({ full: a.full + p.full, half: a.half + p.half }), { full: 0, half: 0 });
+  const permits = S.permits.filter((p) => p.matricule === m && p.status === 'APPROVED' && p.date.startsWith(String(year))).length;
+  const rows = ls.map((l) => `<tr><td>${esc(TYPES[l.type].label)}</td><td>${dmy(l.start)}</td><td>${dmy(l.end)}</td><td>${fmt(l.days)}</td><td>${payText(paySplit(l))}</td><td>${STATUS[l.status]}</td></tr>`).join('') || '<tr><td colspan="6">لا توجد عطل مسجلة خلال السنة</td></tr>';
+  const kv = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف رصيد ${esc(e.name)}</title><style>body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif;font-size:15px;color:#000}.hd{display:flex;justify-content:space-between;align-items:flex-start}.hd>div{white-space:nowrap}h1{text-align:center;font-size:24px;margin:18px 0 6px}.sub{text-align:center;margin-bottom:18px}table{width:100%;border-collapse:collapse;margin:10px 0 18px}th,td{border:1px solid #000;padding:6px 8px;text-align:center}table.kv th{width:45%;background:#eef0f7;text-align:right}h2{font-size:17px;margin:14px 0 4px}.big{font-size:20px;font-weight:bold}.sig{display:flex;justify-content:space-between;margin-top:30px}.sig div{white-space:nowrap}</style></head><body>
+<div class="hd"><div>الإدارة المركزية للموارد البشرية<br><b>إدارة العمل الاجتماعي والثقافي</b></div><div>تاريخ الإصدار: ${dmy(today())}</div></div>
+<h1>كشف رصيد العطل لسنة ${year}</h1>
+<div class="sub">${esc(e.name)} — الرقم الآلي: ${esc(m)}${e.grade ? ` — الرتبة: ${esc(e.grade)}` : ''}</div>
+<h2>العطلة السنوية للاستراحة</h2>
+<table class="kv">${kv('المستحق لسنة ' + year, fmt(b.entitled))}${kv('المرحّل من السنة السابقة', fmt(b.carried))}${kv('المستهلك', fmt(b.used))}${kv('قيد الانتظار', fmt(b.pending))}${kv('<span class="big">الرصيد المتبقي</span>', `<span class="big">${fmt(b.remaining)} يوماً</span>`)}</table>
+<h2>العطل الأخرى خلال السنة</h2>
+<table class="kv">${kv('مرض بكامل الأجر / بنصف الأجر', `${fmt(sick.full)} / ${fmt(sick.half)}`)}${kv('عطل استثنائية', `${fmt(sum('EXCEPTIONAL'))} من ${TYPES.EXCEPTIONAL.perYear}`)}${kv('عطل بدون أجر', fmt(sum('UNPAID')))}${kv('رخص خروج مقبولة', permits)}${kv('غيابات غير مبررة', fmt(S.absences?.[m] || 0))}</table>
+<h2>تفصيل العطل</h2>
+<table><thead><tr><th>النوع</th><th>من</th><th>إلى</th><th>الأيام</th><th>الأجر</th><th>الحالة</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="sig"><div>إمضاء المعني بالأمر</div><div>الموارد البشرية (الإمضاء والختم)</div></div></body></html>`;
+  savePdf(html, `كشف-رصيد-${m}-${year}.pdf`, 'portrait');
+}
+$('stmtBtn').addEventListener('click', () => S.agent && printStatement(S.agent, S.year));
 $('repCsv').addEventListener('click', () => {
   const head = ['الرقم الآلي', 'الإسم واللقب', 'المستحق', 'المستهلك', 'قيد الانتظار', 'المتبقي', 'مرض بكامل الأجر', 'مرض بنصف الأجر', 'استثنائية', 'بدون أجر', 'أيام الخصم'];
   const lines = reportData().map((r) => [r.m, r.name, r.entitled + r.carried, r.used, r.pending, r.remaining, r.sickFull, r.sickHalf, r.exc, r.unpaid, r.deduct].join(','));

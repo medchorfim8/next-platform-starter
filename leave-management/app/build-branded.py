@@ -78,5 +78,6 @@ s = s.replace("$('pmDate').value = today();", "$('pmDate').value = today();\nif 
 s = s.replace('<div style="width:130px"></div></header>', f'<div style="width:130px"><img src="{logo}" style="width:130px" alt=""></div></header>')
 s = s.replace('<div class="org">الإدارة المركزية للموارد البشرية<b>', f'<div style="text-align:center"><img src="{logo}" style="width:150px" alt=""></div><div class="org">الإدارة المركزية للموارد البشرية<b>')
 s = s.replace('<div class="no c">N° 906', f'<div class="c"><img src="{logo}" style="width:120px" alt=""></div><div class="no c">N° 906')
+s = s.replace('<div>تاريخ الإصدار:', f'<img src="{logo}" style="width:110px" alt=""><div>تاريخ الإصدار:', 1)
 (here / 'index-poste.html').write_text(s)
 print('index-poste.html', len(s))
