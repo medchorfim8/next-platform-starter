@@ -1,0 +1,79 @@
+openapi: 3.1.0
+info: { title: Leave Management API — منظومة متابعة العطل, version: 1.0.0 }
+servers: [{ url: https://conges.ministere.gov.tn/api/v1 }]
+security: [{ oidc: [] }]
+components:
+  securitySchemes:
+    oidc: { type: openIdConnect, openIdConnectUrl: https://sso.ministere.gov.tn/realms/etat/.well-known/openid-configuration }
+  schemas:
+    LeaveRequest:
+      type: object
+      required: [type, start, end]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        refNo: { type: string, readOnly: true }
+        type: { type: string, enum: [ANNUAL, SICK, PRENATAL, MATERNITY, POSTNATAL, PATERNITY, EXCEPTIONAL, UNPAID] }
+        reason: { type: string }
+        start: { type: string, format: date }
+        end: { type: string, format: date }
+        extended: { type: boolean, description: توأم أو خديج }
+        interimId: { type: integer }
+        documentId: { type: string, format: uuid }
+        status: { type: string, readOnly: true }
+        daysCounted: { type: number, readOnly: true }
+        pay: { type: object, readOnly: true, properties: { full: {type: number}, half: {type: number}, none: {type: number} } }
+    Balance:
+      type: object
+      properties:
+        type: { type: string }
+        year: { type: integer }
+        entitled: { type: number }
+        carriedIn: { type: number }
+        used: { type: number }
+        pending: { type: number }
+        remaining: { type: number }
+        expiresOn: { type: string, format: date }
+    Decision:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [approve, reject, return] }
+        comment: { type: string, description: إجباري عند الرفض أو الإرجاع }
+paths:
+  /me/balances:
+    get: { summary: أرصدة العون الحالي, parameters: [{ name: year, in: query, schema: { type: integer } }], responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Balance' } } } } } } }
+  /me/leaves:
+    get: { summary: سجل عطلي, responses: { '200': { description: OK } } }
+    post: { summary: إنشاء طلب (مسودة), requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/LeaveRequest' } } } }, responses: { '201': { description: Created }, '422': { description: أخطاء قواعد العمل } } }
+  /leaves/simulate:
+    post: { summary: محاكاة الأيام المحتسبة وتوزيع الأجر دون حفظ, responses: { '200': { description: OK } } }
+  /leaves/{id}/submit:
+    post: { summary: إرسال الطلب لرئيس القسم, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+  /leaves/{id}/cancel:
+    post: { summary: إلغاء (قبل بداية العطلة) أو قطع عطلة جارية مع إرجاع الأيام, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+  /leaves/{id}/decision:
+    post: { summary: قرار رئيس القسم أو الموارد البشرية, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Decision' } } } }, responses: { '200': { description: OK }, '409': { description: تغيرت الحالة } } }
+  /leaves/{id}/documents:
+    post: { summary: رفع وثيقة مثبتة (PDF/JPG ≤ 5MB), parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '201': { description: Created } } }
+  /leaves/{id}/decision.pdf:
+    get: { summary: قرار منح العطلة بصيغة PDF موقّع إلكترونياً, parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { '200': { description: PDF } } }
+  /approvals/inbox:
+    get: { summary: الطلبات في انتظار قراري (مع المفوَّضة إليّ), responses: { '200': { description: OK } } }
+  /hr/employees/{id}/leaves:
+    post: { summary: تسجيل عطلة نيابة عن عون (مرض، ولادة، تسوية), parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '201': { description: Created } } }
+  /hr/employees/{id}/balances/adjust:
+    post: { summary: تعديل رصيد يدوي مع تعليل إجباري, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '201': { description: Created } } }
+  /hr/year-close:
+    post: { summary: إقفال السنة (ترحيل وإسقاط وفتح الاستحقاقات الجديدة), parameters: [{ name: year, in: query, required: true, schema: { type: integer } }], responses: { '202': { description: Accepted } } }
+  /reports/{name}:
+    get:
+      summary: التقارير
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string, enum: [absences, consumption, sick-leave, unpaid, pending-sla, annual-summary] } }
+        - { name: unit, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: format, in: query, schema: { type: string, enum: [json, csv, pdf, xlsx] } }
+      responses: { '200': { description: OK } }
+  /payroll/exports:
+    get: { summary: ملف الخصومات الشهرية لمنظومة الأجور, parameters: [{ name: month, in: query, required: true, schema: { type: string } }], responses: { '200': { description: CSV } } }
