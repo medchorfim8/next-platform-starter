@@ -125,6 +125,9 @@ table.sheet tr.leave td { background: var(--accent-soft); }
           </div>
           <label id="lfReasonWrap" hidden>السبب<select id="lfReason"></select></label>
           <label id="lfExtWrap" hidden><span><input type="checkbox" id="lfExt"> توأم أو مولود خديج (تقرير طبي)</span></label>
+          <label id="lfYearWrap">بعنوان سنة (سنة استحقاق عطلة الاستراحة)<select id="lfYear"></select></label>
+          <label>العنوان خلال العطلة<input type="text" id="lfAddress" placeholder="العنوان الذي تُقضّى فيه العطلة"></label>
+          <label>إسم النائب (عند الاقتضاء)<input type="text" id="lfInterim"></label>
           <label>ملاحظة / مرجع الوثيقة<input type="text" id="lfNote" placeholder="مثال: شهادة طبية مودعة بتاريخ ..."></label>
           <div class="sim" id="lfSim">اختر النوع والتواريخ لعرض الأيام المحتسبة.</div>
           <ul class="errors" id="lfErrors"></ul>
@@ -400,16 +403,19 @@ function renderAgent() {
     return `<tr><td>${esc(TYPES[l.type].label)}${l.reason ? `<div class="note">${esc(REASONS[l.reason][0])}</div>` : ''}</td>
       <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}</td><td class="note">${payText(paySplit(l))}</td>
       <td><span class="pill p-${l.status}">${STATUS[l.status]}</span>${l.comment ? `<div class="note">${esc(l.comment)}</div>` : ''}</td>
-      <td class="actions">${l.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${l.id}">سحب الطلب</button>` : ''}${l.status === 'RETURNED' && S.isAdmin ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
+      <td class="actions">${FORM906.includes(l.type) ? `<button class="btn ghost" data-act="form906" data-id="${l.id}">طلب العطلة (906)</button>` : ''}${l.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${l.id}">سحب الطلب</button>` : ''}${l.status === 'RETURNED' && S.isAdmin ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">لا توجد عطل مسجلة لهذا العون.</td></tr>';
 }
 function readForm() {
-  return { matricule: S.agent, type: $('lfType').value, start: $('lfStart').value, end: $('lfEnd').value, reason: $('lfType').value === 'EXCEPTIONAL' ? $('lfReason').value : null, extended: $('lfType').value === 'MATERNITY' && $('lfExt').checked, note: $('lfNote').value.trim() };
+  const type = $('lfType').value;
+  return { matricule: S.agent, type, start: $('lfStart').value, end: $('lfEnd').value, reason: type === 'EXCEPTIONAL' ? $('lfReason').value : null, extended: type === 'MATERNITY' && $('lfExt').checked, note: $('lfNote').value.trim(),
+    titleYear: type === 'ANNUAL' ? +$('lfYear').value || null : null, address: $('lfAddress').value.trim(), interim: $('lfInterim').value.trim() };
 }
 function renderForm() {
   const req = readForm();
   $('lfReasonWrap').hidden = req.type !== 'EXCEPTIONAL';
   $('lfExtWrap').hidden = req.type !== 'MATERNITY';
+  $('lfYearWrap').hidden = req.type !== 'ANNUAL';
   if (!req.start || !req.end) { $('lfSim').textContent = 'اختر النوع والتواريخ لعرض الأيام المحتسبة.'; $('lfErrors').innerHTML = ''; return; }
   const { errs, days } = validate(req);
   const p = days > 0 ? paySplit({ ...req, days, id: '_new' }) : null;
@@ -426,7 +432,7 @@ function renderApprovals() {
       <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}<div class="note">${payText(paySplit(l))}</div></td><td>${after}</td>
       <td><span class="pill p-${l.status}">${STATUS[l.status]}</span></td>
       <td><input type="text" id="c_${l.id}" placeholder="إجباري عند الرفض أو الإرجاع" style="width:100%"></td>
-      <td class="actions"><button class="btn ok" data-act="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة'}</button>
+      <td class="actions">${FORM906.includes(l.type) ? `<button class="btn ghost" data-act="form906" data-id="${l.id}">906</button>` : ''}<button class="btn ok" data-act="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة'}</button>
         <button class="btn ghost" data-act="return" data-id="${l.id}">إرجاع</button><button class="btn bad" data-act="reject" data-id="${l.id}">رفض</button></td></tr>`;
   }).join('') || '<tr><td colspan="8" class="empty">لا توجد طلبات في الانتظار.</td></tr>';
 }
@@ -495,7 +501,7 @@ function renderSettings() {
   }).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
   $('periodList').innerHTML = (S.settings.periods || []).map((p, i) => `<div class="row" style="align-items:center">${esc(p.label || 'حصة واحدة')}: ${dmy(p.from)} ← ${dmy(p.to)} <button class="btn bad" data-act="delPeriod" data-i="${i}">حذف</button></div>`).join('') || '<p class="note">لا توجد فترات.</p>';
   $('holList').innerHTML = (S.settings.holidays || []).slice().sort((a, b) => a.day.localeCompare(b.day)).map((h) => `<div class="row" style="align-items:center">${dmy(h.day)} — ${esc(h.label)} <button class="btn bad" data-act="delHol" data-day="${h.day}">حذف</button></div>`).join('') || '<p class="note">لا توجد عطل رسمية.</p>';
-  $('empList').innerHTML = S.employees.map((e) => `<tr><td>${esc(e.order)}</td><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div></td>
+  $('empList').innerHTML = S.employees.map((e) => `<tr><td>${esc(e.order)}</td><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div><input type="text" data-grade="${esc(e.matricule)}" value="${esc(e.grade || '')}" placeholder="الرتبة" aria-label="رتبة ${esc(e.name)}" style="width:100%; margin-top:4px"></td>
     <td>${e.uid ? `<span data-person="${esc(e.uid)}">…</span>` : '<span class="note">غير مربوط</span>'}
       <div id="link_${esc(e.matricule)}" hidden><input type="search" data-search="${esc(e.matricule)}" placeholder="ابحث بالإسم" style="width:100%"><div class="hits" id="hits_${esc(e.matricule)}"></div></div></td>
     <td class="actions">${e.uid ? `<button class="btn bad" data-act="unlink" data-m="${esc(e.matricule)}">فك الربط</button>` : `<button class="btn ghost" data-act="linkOpen" data-m="${esc(e.matricule)}">ربط بحساب</button>`}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
@@ -536,7 +542,7 @@ $('leaveForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const req = readForm(); const { errs, days } = validate(req);
   if (errs.some((e) => !e.includes('استثنائياً'))) return;
-  if (!S.isAdmin) { sendToInbox({ kind: 'leave', type: req.type, start: req.start, end: req.end, reason: req.reason, extended: req.extended, note: req.note }); $('lfNote').value = ''; return; }
+  if (!S.isAdmin) { sendToInbox({ kind: 'leave', type: req.type, start: req.start, end: req.end, reason: req.reason, extended: req.extended, note: req.note, titleYear: req.titleYear, address: req.address, interim: req.interim }); $('lfNote').value = ''; return; }
   const status = TYPES[req.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER';
   write((db) => db.collection('leaves').add({ ...req, days, status, createdAt: new Date().toISOString(), comment: '' }), 'أُرسل الطلب.');
   $('lfNote').value = '';
@@ -569,6 +575,7 @@ document.addEventListener('click', (ev) => {
     S.agent = b.dataset.m; $('agentSel').value = S.agent; $('lfStart').value = S.date; $('lfEnd').value = S.date; $('lfType').value = 'ANNUAL';
     $('lfNote').value = `تسوية غياب يوم ${dmy(S.date)}`; switchTab('agent'); renderAgent(); renderForm();
   }
+  if (act === 'form906') print906(S.leaves.find((x) => x.id === id));
   if (act === 'cancelSent') {
     const requests = (S.myInbox.requests || []).filter((r) => `sent_${r.id}` !== id);
     write((db) => db.doc(`inbox/${S.uid}`).set({ ...S.myInbox, requests }), 'سُحب الطلب.');
@@ -607,6 +614,64 @@ $('permitForm').addEventListener('submit', (ev) => {
   $('pmReason').value = ''; $('pmTime').value = '';
 });
 ['pmKind', 'pmMonth'].forEach((id) => $(id).addEventListener('input', renderPermits));
+// نموذج طلب عطلة رقم 906 (عطلة استراحة / عطلة استثنائية) — مزدوج اللغة، مطابق للوثيقة الرسمية
+const FORM906 = ['ANNUAL', 'EXCEPTIONAL'];
+function print906(l) {
+  if (!l) return;
+  const e = S.employees.find((x) => x.matricule === l.matricule) || { name: empName(l.matricule) };
+  const isAnn = l.type === 'ANNUAL';
+  const nature = isAnn ? 'عطلة استراحة' : `عطلة استثنائية${l.reason ? ` (${REASONS[l.reason][0]})` : ''}`;
+  const titre = isAnn ? String(l.titleYear || l.start.slice(0, 4)) : (l.reason ? REASONS[l.reason][0] : '');
+  const dur = `${fmt(l.days)} ${l.days === 1 ? 'يوم' : l.days <= 10 ? 'أيام' : 'يوماً'}`;
+  const mgr = (l.log || []).find((x) => x.from === 'PENDING_MANAGER');
+  const avis = mgr ? (mgr.to === 'REJECTED' ? 'غير موافق' : mgr.to === 'RETURNED' ? 'مُرجع للتعديل' : 'موافق') + (mgr.comment ? ` — ${mgr.comment}` : '') : '';
+  const signDate = dmy((l.createdAt || new Date().toISOString()).slice(0, 10));
+  const box = (on) => `<span class="box">${on ? 'X' : ''}</span>`;
+  const row = (ar, fr, val) => `<div class="r"><span class="fr">${fr}</span><span class="v">${esc(val)}</span><span class="ar">${ar}</span></div>`;
+  const html = `<!doctype html><html lang="ar"><head><meta charset="utf-8"><title>طلب عطلة 906 — ${esc(e.name)}</title><style>
+@page{size:A4;margin:12mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,Arial,sans-serif;font-size:16px;color:#000}
+.page{border:1.5px solid #7a4a86;border-radius:14px;padding:20px 28px}
+.c{text-align:center}.no{font-size:18px;margin:6px 0 14px}
+.org{display:flex;justify-content:space-between;font-size:18px;margin-bottom:10px}
+h1{text-align:center;font-size:24px;margin:10px 0}
+.types{display:grid;justify-content:center;gap:8px;font-size:19px;font-weight:bold;margin-bottom:22px}
+.types div{display:grid;grid-template-columns:200px 34px 200px;align-items:center;gap:14px}
+.types .fr{text-align:left}.types .ar{text-align:right;direction:rtl}
+.box{display:inline-block;width:20px;height:20px;border:1.5px solid #000;text-align:center;line-height:20px;font-weight:bold}
+.r{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:end;margin:13px 0}
+.r .fr{text-align:left;white-space:nowrap}.r .ar{direction:rtl;white-space:nowrap}
+.r .v{border-bottom:1px dotted #000;text-align:center;min-height:22px;font-weight:bold;direction:rtl}
+.sig{text-align:center;margin:16px 0 40px}
+.notes{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:13px;margin-top:30px}
+.notes .ar{direction:rtl;text-align:right}
+</style></head><body><div class="page">
+<div class="no c">N° 906 &nbsp; رقم</div>
+<div class="org"><span>Office National des postes</span><span dir="rtl">الديوان الوطني للبريد</span></div>
+<h1>Demande de Congé <small>(1)</small> &nbsp; طلب عطلة</h1>
+<div class="types"><div><span class="fr">Congé de Repos</span>${box(isAnn)}<span class="ar">عطلة إستراحة</span></div>
+<div><span class="fr">Congé exceptionnel</span>${box(!isAnn)}<span class="ar">عطلة إستثنائية</span></div></div>
+${row('إني الممضي أسفله', 'Je soussigné', e.name)}
+${row('الرتبة', 'Grade', e.grade || '')}
+${row('الرقم الميكانوغرافي', 'Matricule', l.matricule)}
+${row('تاريخ الإنتداب', 'Date de recrutement', '')}
+${row('أطلب الحصول على (2)', "Demande de bénéficier d'un (2)", nature)}
+${row('لمدة', "D'une durée de", dur)}
+${row('بعنوان (3)', 'au titre de (3)', titre)}
+${row('إبتداء من', 'A compter du', dmy(l.start))}
+${row('إلى (بدخول الغاية)', 'au (inclus)', dmy(l.end))}
+${row('لقضائها بالعنوان التالي', 'Adresse pendant le congé', l.address || '')}
+${row('بتونس في', 'A Tunis le', signDate)}
+<div class="sig">الإمضاء</div>
+${row('رأي الرئيس المباشر', 'Avis du chef Immédiat', avis)}
+${row('إسم النائب (عند الإقتضاء)', 'Nom du remplaçant (éventuellement)', l.interim || '')}
+<div class="sig">التاريخ و الإمضاء${mgr ? ` — ${dmy(mgr.at.slice(0, 10))}` : ''}</div>
+<div class="notes">
+<span>(1) Mettre une croix dans la case correspondante</span><span class="ar">(1) وضع علامة X في المربع المناسب</span>
+<span>(2) Ecrire la nature du congé (repos ou exceptionnel)</span><span class="ar">(2) ذكر نوعية العطلة (إستراحة أو إستثنائية)</span>
+<span>(3) Indiquer l'année à laquelle se rapporte le congé</span><span class="ar">(3) ذكر سنة إستحقاق عطلة الإستراحة</span>
+</div></div></body></html>`;
+  save(`طلب-عطلة-906-${l.matricule}-${l.start}.html`, html, 'text/html');
+}
 function printPermit(p) {
   const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>رخصة ${p.kind === 'EXIT' ? 'خروج' : 'دخول'} ${esc(empName(p.matricule))}</title><style>@page{size:A5;margin:14mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif;font-size:18px}.org{font-size:15px}.org b{display:block;margin-top:40px}h1{text-align:center;font-size:30px;margin:50px 0 30px}.f{display:flex;gap:10px;margin:18px 0}.f b{min-width:140px}.f span{flex:1;border-bottom:1px dotted #000}.sig{display:flex;justify-content:space-between;margin-top:50px}.sig small{display:block;font-size:13px}</style></head><body>
 <div class="org">الإدارة المركزية للموارد البشرية<b>إدارة العمل الإجتماعي و الثقافي</b></div>
@@ -656,6 +721,7 @@ $('lfType').innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${
 $('lfReason').innerHTML = Object.entries(REASONS).map(([k, [l, d]]) => `<option value="${k}">${l} (${d} ${d === 1 ? 'يوم' : 'أيام'})</option>`).join('');
 const y = new Date().getFullYear();
 $('yearSel').innerHTML = [y + 1, y, y - 1, y - 2].map((v) => `<option value="${v}" ${v === y ? 'selected' : ''}>${v}</option>`).join('');
+$('lfYear').innerHTML = [y, y - 1].map((v) => `<option value="${v}">${v}</option>`).join('');
 $('pmDate').value = today(); $('pmMonth').value = today().slice(0, 7);
 renderAll();
 
@@ -676,6 +742,7 @@ async function searchPeople(m, q) {
   if (!hits.length) box.innerHTML = '<span class="note">لا نتائج. يمكن للعون أن يفتح التطبيقة ويرسل طلب ربط برقمه الآلي.</span>';
 }
 document.addEventListener('input', (ev) => { const m = ev.target.dataset?.search; if (m) searchPeople(m, ev.target.value); });
+document.addEventListener('change', (ev) => { const m = ev.target.dataset?.grade; if (m !== undefined && S.isAdmin) write((db) => db.doc(`employees/${m}`).update({ grade: ev.target.value.trim() }), 'حُفظت الرتبة.'); });
 function linkEmployee(m, uid) {
   if (S.employees.some((e) => e.uid === uid && e.matricule !== m)) return toast('هذا الحساب مربوط بعون آخر.');
   write((db) => db.doc(`employees/${m}`).update({ uid }), 'رُبط الحساب بالعون.');
@@ -700,7 +767,7 @@ async function importInbox() {
         const id = `in_${uid.replace(/[^A-Za-z0-9_-]/g, '')}_${r.id}`;
         if (r.kind === 'leave' && TYPES[r.type] && !S.leaves.some((l) => l.id === id)) {
           const ref = S.db.doc(`leaves/${id}`); if ((await ref.get()).exists) continue;
-          const req = { matricule: emp.matricule, type: r.type, start: r.start, end: r.end, reason: r.reason || null, extended: !!r.extended, note: r.note || '' };
+          const req = { matricule: emp.matricule, type: r.type, start: r.start, end: r.end, reason: r.reason || null, extended: !!r.extended, note: r.note || '', titleYear: r.titleYear || null, address: r.address || '', interim: r.interim || '' };
           const { days } = validate({ ...req, id });
           await ref.set({ ...req, days: Math.max(days, 0), status: TYPES[r.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER', createdAt: r.at, comment: '', source: 'agent' });
         }
@@ -722,8 +789,8 @@ async function syncMirrors() {
     if (!e.uid) continue; linked.add(e.uid);
     const m = e.matricule;
     const doc = {
-      matricule: m, name: e.name,
-      leaves: leavesOf(m).filter((l) => l.end >= from).map((l) => ({ id: l.id, type: l.type, start: l.start, end: l.end, days: l.days, status: l.status, comment: l.comment || '', reason: l.reason || null, note: l.note || '' })),
+      matricule: m, name: e.name, grade: e.grade || '',
+      leaves: leavesOf(m).filter((l) => l.end >= from).map((l) => ({ id: l.id, type: l.type, start: l.start, end: l.end, days: l.days, status: l.status, comment: l.comment || '', reason: l.reason || null, note: l.note || '', titleYear: l.titleYear || null, address: l.address || '', interim: l.interim || '', createdAt: l.createdAt || '', log: (l.log || []).map((x) => ({ at: x.at, from: x.from, to: x.to, comment: x.comment || '' })) })),
       balances: Object.fromEntries(Object.entries(S.balances).filter(([k]) => k.startsWith(m + '_'))),
       permits: S.permits.filter((p) => p.matricule === m && p.date >= from).map((p) => ({ id: p.id, kind: p.kind, date: p.date, time: p.time, reason: p.reason, status: p.status })),
       absences: S.absences?.[m] || 0,
@@ -735,7 +802,7 @@ async function syncMirrors() {
 }
 function applyMirror(d) {
   const m = d.matricule;
-  S.employees = [{ matricule: m, name: d.name, order: 1 }]; S.agent = m;
+  S.employees = [{ matricule: m, name: d.name, grade: d.grade || '', order: 1 }]; S.agent = m;
   const sent = S.myInbox.requests || [];
   const imported = new Set([...(d.leaves || []), ...(d.permits || [])].map((x) => x.id));
   const pend = sent.filter((r) => ![...imported].some((id) => id.endsWith('_' + r.id)));
