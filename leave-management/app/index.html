@@ -79,6 +79,7 @@ table.sheet tr.leave td { background: var(--accent-soft); }
     <button role="tab" data-tab="agent" aria-selected="true">رصيدي وعطلي</button>
     <button role="tab" data-tab="approvals">الموافقات <span id="pendingCount"></span></button>
     <button role="tab" data-tab="attendance">بطاقة الحضور</button>
+    <button role="tab" data-tab="permits">رخص الخروج <span id="permitCount"></span></button>
     <button role="tab" data-tab="reports">التقارير</button>
     <button role="tab" data-tab="settings">الإعدادات</button>
   </nav>
@@ -145,7 +146,30 @@ table.sheet tr.leave td { background: var(--accent-soft); }
       </div>
       <h2 style="margin-top:12px; text-align:center">بطاقة حضور — <span id="attDateAr"></span></h2>
       <div class="scroll"><table class="sheet"><thead id="attHead"></thead><tbody id="attBody"></tbody></table></div>
-      <p class="note">التأخير في الدخول لا يُحتسب. عند الإقفال يُسجَّل الغياب غير المبرر والغياب عن حصة والتسجيل الناقص، ويُمنح العون 48 ساعة للتبرير.</p>
+      <p class="note">التأخير في الدخول لا يُحتسب. الخروج قبل الوقت أو الدخول بعد الوقت يُبرَّر برخصة خروج يوافق عليها الرئيس المباشر. عند الإقفال يُسجَّل الغياب غير المبرر والغياب عن حصة والتسجيل الناقص، ويُمنح العون 48 ساعة للتبرير.</p>
+    </div>
+  </section>
+
+  <!-- رخص الخروج -->
+  <section data-pane="permits" hidden class="grid2">
+    <div class="panel">
+      <h2>رخصة خروج</h2>
+      <p class="note">تُعتمد عند الخروج قبل الوقت أو الدخول بعد الوقت، وتُسجَّل آلياً في بطاقة الحضور بعد موافقة الرئيس المباشر.</p>
+      <form id="permitForm" class="row" style="align-items: stretch; flex-direction: column;">
+        <label>الإسم واللقب<select id="pmAgent"></select></label>
+        <label>النوع<select id="pmKind"><option value="EXIT">خروج قبل الوقت</option><option value="ENTRY">دخول بعد الوقت</option></select></label>
+        <div class="row">
+          <label style="flex:1">التاريخ<input type="date" id="pmDate" required></label>
+          <label style="flex:1"><span id="pmTimeLabel">توقيت الخروج</span><input type="time" id="pmTime" required></label>
+        </div>
+        <label>السبب<input type="text" id="pmReason" required placeholder="مثال: موعد طبي، ظرف عائلي، قضاء شأن إداري"></label>
+        <div><button class="btn" type="submit" id="pmSubmit">تسجيل الرخصة</button></div>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>الرخص المسجّلة</h2>
+      <div class="row"><label>الشهر<input type="month" id="pmMonth"></label></div>
+      <div class="scroll" style="margin-top:10px"><table><thead><tr><th>العون</th><th>التاريخ</th><th>النوع والتوقيت</th><th>السبب</th><th>رأي الرئيس المباشر</th><th></th></tr></thead><tbody id="permitBody"></tbody></table></div>
     </div>
   </section>
 
@@ -156,7 +180,7 @@ table.sheet tr.leave td { background: var(--accent-soft); }
         <h2>الحصيلة السنوية <span id="repYear"></span></h2>
         <button class="btn ghost" id="repCsv" type="button">تنزيل CSV</button>
       </div>
-      <div class="scroll"><table><thead><tr><th>الرقم الآلي</th><th>الإسم واللقب</th><th>المستحق</th><th>المستهلك (سنوية)</th><th>قيد الانتظار</th><th>المتبقي</th><th>مرض (كامل/نصف)</th><th>استثنائية</th><th>بدون أجر</th><th>أيام الخصم</th><th>غيابات غير مبررة</th></tr></thead><tbody id="repBody"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>الرقم الآلي</th><th>الإسم واللقب</th><th>المستحق</th><th>المستهلك (سنوية)</th><th>قيد الانتظار</th><th>المتبقي</th><th>مرض (كامل/نصف)</th><th>استثنائية</th><th>بدون أجر</th><th>أيام الخصم</th><th>رخص الخروج</th><th>غيابات غير مبررة</th></tr></thead><tbody id="repBody"></tbody></table></div>
     </div>
     <div class="panel">
       <h2>الخصم الشهري لمنظومة الأجور</h2>
@@ -225,7 +249,7 @@ const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 const $ = (id) => document.getElementById(id);
 
 // ===== الحالة =====
-const S = { employees: [], leaves: [], balances: {}, settings: { periods: [], holidays: [] }, att: {}, sheet: null, agent: null, year: new Date().getFullYear(), date: today(), db: null, canWrite: true };
+const S = { employees: [], leaves: [], permits: [], balances: {}, settings: { periods: [], holidays: [] }, att: {}, sheet: null, agent: null, year: new Date().getFullYear(), date: today(), db: null, canWrite: true };
 let attUnsub = null, sheetUnsub = null;
 
 function holidaysSet() { return new Set((S.settings.holidays || []).map((h) => h.day)); }
@@ -313,16 +337,21 @@ function rowStatus(m, date) {
   if (l) return { status: 'LEAVE', remark: `${TYPES[l.type].label} من ${dmy(l.start)} إلى ${dmy(l.end)}` };
   return { status: 'EXPECTED', remark: '' };
 }
-function anomalies(entry, sched) {
+// رخصة الخروج المقبولة تبرّر الخروج قبل الوقت أو الدخول بعد الوقت، وما يترتب عنهما من غياب عن بقية الحصص.
+const permitsOn = (m, date) => S.permits.filter((p) => p.matricule === m && p.date === date && p.status === 'APPROVED');
+const KIND = { EXIT: 'رخصة خروج على الساعة', ENTRY: 'رخصة دخول على الساعة' };
+function anomalies(entry, sched, permits = []) {
   const out = [], missed = [];
+  const exit = permits.find((p) => p.kind === 'EXIT'), entryP = permits.find((p) => p.kind === 'ENTRY');
   sched.s.forEach(([, end], i) => {
     const a = entry?.[`in${i + 1}`], b = entry?.[`out${i + 1}`];
     if (!a && !b) { missed.push(i); return; }
     if (!a || !b) out.push({ code: 'MISSING', label: `تسجيل ناقص في الحصة ${i + 1}` });
-    if (b && toMin(b) < toMin(end)) out.push({ code: 'EARLY', label: `خروج مبكر ${toMin(end) - toMin(b)} دق` });
+    if (b && toMin(b) < toMin(end) && !exit) out.push({ code: 'EARLY', label: `خروج قبل الوقت دون رخصة (${toMin(end) - toMin(b)} دق)` });
   });
-  if (missed.length === sched.s.length) out.unshift({ code: 'ABSENT', days: 1, label: 'غياب غير مبرر' });
-  else if (missed.length) out.unshift({ code: 'HALF', days: 0.5, label: `غياب عن الحصة ${missed[0] + 1}` });
+  const covered = missed.filter((i) => (exit && toMin(sched.s[i][0]) >= toMin(exit.time)) || (entryP && toMin(sched.s[i][1]) <= toMin(entryP.time)));
+  if (missed.length === sched.s.length && covered.length < missed.length) out.unshift({ code: 'ABSENT', days: 1, label: 'غياب غير مبرر' });
+  else if (missed.length > covered.length) out.unshift({ code: 'HALF', days: 0.5, label: `غياب عن الحصة ${missed[0] + 1}` });
   return out;
 }
 
@@ -387,8 +416,9 @@ function sheetRows(date) {
   const sched = scheduleFor(date), closed = !!S.sheet?.closed;
   return S.employees.map((e, i) => {
     const st = rowStatus(e.matricule, date), entry = S.att[e.matricule] || {};
-    const an = st.status === 'EXPECTED' && closed ? anomalies(entry, sched) : [];
-    const remark = [st.remark, ...an.map((a) => a.label), entry.note].filter(Boolean).join(' — ');
+    const pm = st.status === 'EXPECTED' ? permitsOn(e.matricule, date) : [];
+    const an = st.status === 'EXPECTED' && closed ? anomalies(entry, sched, pm) : [];
+    const remark = [st.remark, ...pm.map((p) => `${KIND[p.kind]} ${p.time} (${p.reason})`), ...an.map((a) => a.label), entry.note].filter(Boolean).join(' — ');
     return { n: i + 1, e, st, entry, an, remark };
   });
 }
@@ -407,7 +437,8 @@ function renderAttendance() {
     return `<tr class="${r.st.status === 'LEAVE' ? 'leave' : ''}"><td>${r.n}</td><td>${esc(r.e.matricule)}</td><td class="name">${esc(r.e.name)}</td>${cells}
       <td class="rem"><span class="${flag ? 'flag' : ''}">${esc(r.remark)}</span>
       ${r.st.status === 'EXPECTED' && !S.sheet?.closed ? `<input type="text" data-m="${esc(r.e.matricule)}" data-f="note" value="${esc(r.entry.note || '')}" placeholder="ملاحظة" ${ro ? 'disabled' : ''} style="width:100%">` : ''}
-      ${flag ? `<div><button class="btn ghost" data-act="regularize" data-m="${esc(r.e.matricule)}">تسوية بعطلة</button></div>` : ''}</td></tr>`;
+      ${flag ? `<div><button class="btn ghost" data-act="regularize" data-m="${esc(r.e.matricule)}">تسوية بعطلة</button></div>` : ''}
+      ${r.st.status === 'EXPECTED' ? `<div><button class="btn ghost" data-act="newPermit" data-m="${esc(r.e.matricule)}">+ رخصة خروج</button></div>` : ''}</td></tr>`;
   }).join('') || `<tr><td colspan="${4 + sched.s.length * 2}" class="empty">أضف الأعوان من تبويب الإعدادات.</td></tr>`;
 }
 function reportData() {
@@ -419,13 +450,13 @@ function reportData() {
     const sum = (t) => ap.filter((l) => l.type === t).reduce((s, l) => s + l.days, 0);
     const pays = ap.map(paySplit);
     const deduct = pays.reduce((s, p) => s + p.none + p.half / 2, 0);
-    return { m: e.matricule, name: e.name, ...b, sickFull: sick.full, sickHalf: sick.half, exc: sum('EXCEPTIONAL'), unpaid: sum('UNPAID'), deduct, absences: S.absences?.[e.matricule] || 0 };
+    return { m: e.matricule, name: e.name, ...b, sickFull: sick.full, sickHalf: sick.half, exc: sum('EXCEPTIONAL'), unpaid: sum('UNPAID'), deduct, permits: S.permits.filter((p) => p.matricule === e.matricule && p.status === 'APPROVED' && p.date.startsWith(String(y))).length, absences: S.absences?.[e.matricule] || 0 };
   });
 }
 function renderReports() {
   $('repYear').textContent = S.year;
   const rows = reportData();
-  $('repBody').innerHTML = rows.map((r) => `<tr><td>${esc(r.m)}</td><td>${esc(r.name)}</td><td>${fmt(r.entitled + r.carried)}</td><td>${fmt(r.used)}</td><td>${fmt(r.pending)}</td><td><b>${fmt(r.remaining)}</b></td><td>${fmt(r.sickFull)} / ${fmt(r.sickHalf)}</td><td>${fmt(r.exc)}</td><td>${fmt(r.unpaid)}</td><td>${fmt(r.deduct)}</td><td>${r.absences ? `<span class="flag">${fmt(r.absences)}</span>` : '0'}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">لا توجد معطيات بعد.</td></tr>';
+  $('repBody').innerHTML = rows.map((r) => `<tr><td>${esc(r.m)}</td><td>${esc(r.name)}</td><td>${fmt(r.entitled + r.carried)}</td><td>${fmt(r.used)}</td><td>${fmt(r.pending)}</td><td><b>${fmt(r.remaining)}</b></td><td>${fmt(r.sickFull)} / ${fmt(r.sickHalf)}</td><td>${fmt(r.exc)}</td><td>${fmt(r.unpaid)}</td><td>${fmt(r.deduct)}</td><td>${r.permits}</td><td>${r.absences ? `<span class="flag">${fmt(r.absences)}</span>` : '0'}</td></tr>`).join('') || '<tr><td colspan="12" class="empty">لا توجد معطيات بعد.</td></tr>';
   const month = {};
   S.leaves.filter((l) => l.status === 'APPROVED').forEach((l) => {
     const p = paySplit(l); if (!p.none && !p.half) return;
@@ -448,7 +479,24 @@ function renderSettings() {
   $('holList').innerHTML = (S.settings.holidays || []).slice().sort((a, b) => a.day.localeCompare(b.day)).map((h) => `<div class="row" style="align-items:center">${dmy(h.day)} — ${esc(h.label)} <button class="btn bad" data-act="delHol" data-day="${h.day}">حذف</button></div>`).join('') || '<p class="note">لا توجد عطل رسمية.</p>';
   $('empList').innerHTML = S.employees.map((e) => `<div>${esc(e.order)}. ${esc(e.matricule)} — ${esc(e.name)}</div>`).join('') || '<p class="note">لا يوجد أعوان بعد.</p>';
 }
-function renderAll() { fillAgentSelect(); renderAgent(); renderForm(); renderApprovals(); renderAttendance(); renderReports(); renderSettings(); }
+function renderPermits() {
+  const sel = $('pmAgent'), cur = sel.value;
+  sel.innerHTML = S.employees.map((e) => `<option value="${esc(e.matricule)}">${esc(e.matricule)} — ${esc(e.name)}</option>`).join('');
+  if (cur) sel.value = cur;
+  $('pmTimeLabel').textContent = $('pmKind').value === 'EXIT' ? 'توقيت الخروج' : 'توقيت الدخول';
+  $('pmSubmit').disabled = !S.db || !S.canWrite || !S.employees.length;
+  const month = $('pmMonth').value;
+  const rows = S.permits.filter((p) => !month || p.date.startsWith(month)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const pend = S.permits.filter((p) => p.status === 'PENDING').length;
+  $('permitCount').textContent = pend ? `(${pend})` : '';
+  const st = { PENDING: ['p-PENDING_MANAGER', 'في الانتظار'], APPROVED: ['p-APPROVED', 'موافق'], REJECTED: ['p-REJECTED', 'غير موافق'] };
+  $('permitBody').innerHTML = rows.map((p) => `<tr><td>${esc(empName(p.matricule))}<div class="note">${esc(p.matricule)}</div></td><td>${dmy(p.date)}</td>
+    <td>${p.kind === 'EXIT' ? 'خروج' : 'دخول'} على الساعة ${esc(p.time)}</td><td>${esc(p.reason)}</td>
+    <td><span class="pill ${st[p.status][0]}">${st[p.status][1]}</span></td>
+    <td class="actions">${p.status === 'PENDING' ? `<button class="btn ok" data-act="pmApprove" data-id="${p.id}">موافق</button><button class="btn bad" data-act="pmReject" data-id="${p.id}">غير موافق</button>` : ''}
+      <button class="btn ghost" data-act="pmPrint" data-id="${p.id}">تنزيل للإمضاء</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">لا توجد رخص في هذه الفترة.</td></tr>';
+}
+function renderAll() { fillAgentSelect(); renderPermits(); renderAgent(); renderForm(); renderApprovals(); renderAttendance(); renderReports(); renderSettings(); }
 
 // ===== الكتابة =====
 async function write(fn, okMsg) {
@@ -491,6 +539,12 @@ document.addEventListener('click', (ev) => {
     S.agent = b.dataset.m; $('agentSel').value = S.agent; $('lfStart').value = S.date; $('lfEnd').value = S.date; $('lfType').value = 'ANNUAL';
     $('lfNote').value = `تسوية غياب يوم ${dmy(S.date)}`; switchTab('agent'); renderAgent(); renderForm();
   }
+  if (act === 'newPermit') {
+    $('pmAgent').value = b.dataset.m; $('pmDate').value = S.date; $('pmKind').value = 'EXIT'; $('pmTime').value = ''; $('pmReason').value = '';
+    switchTab('permits'); renderPermits(); $('pmTime').focus();
+  }
+  if (act === 'pmApprove' || act === 'pmReject') write((db) => db.doc(`permits/${id}`).update({ status: act === 'pmApprove' ? 'APPROVED' : 'REJECTED', decidedAt: new Date().toISOString() }), act === 'pmApprove' ? 'سُجّلت الموافقة وأُدرجت الرخصة في بطاقة الحضور.' : 'سُجّل الرفض.');
+  if (act === 'pmPrint') printPermit(S.permits.find((x) => x.id === id));
   if (act === 'saveBal') {
     const m = b.dataset.m, entitled = +$(`be_${m}`).value, carried = Math.min(CARRY_MAX, +$(`bc_${m}`).value);
     write((db) => db.doc(`balances/${m}_${S.year}`).set({ matricule: m, year: S.year, entitled, carried }), 'حُفظ الرصيد.');
@@ -503,6 +557,26 @@ document.addEventListener('change', (ev) => {
   const m = el.dataset.m, f = el.dataset.f;
   write((db) => db.doc(`attendance/${S.date}_${m}`).set({ ...(S.att[m] || {}), date: S.date, matricule: m, [f]: el.value }));
 });
+$('permitForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const p = { matricule: $('pmAgent').value, kind: $('pmKind').value, date: $('pmDate').value, time: $('pmTime').value, reason: $('pmReason').value.trim(), status: 'PENDING', createdAt: new Date().toISOString() };
+  if (!p.matricule || !p.date || !p.time || !p.reason) return toast('أكمل كل خانات الرخصة.');
+  write((db) => db.collection('permits').add(p), 'سُجّلت الرخصة في انتظار رأي الرئيس المباشر.');
+  $('pmReason').value = ''; $('pmTime').value = '';
+});
+['pmKind', 'pmMonth'].forEach((id) => $(id).addEventListener('input', renderPermits));
+function printPermit(p) {
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>رخصة ${p.kind === 'EXIT' ? 'خروج' : 'دخول'} ${esc(empName(p.matricule))}</title><style>@page{size:A5;margin:14mm}body{font-family:'Traditional Arabic','Segoe UI',Tahoma,sans-serif;font-size:18px}.org{font-size:15px}.org b{display:block;margin-top:40px}h1{text-align:center;font-size:30px;margin:50px 0 30px}.f{display:flex;gap:10px;margin:18px 0}.f b{min-width:140px}.f span{flex:1;border-bottom:1px dotted #000}.sig{display:flex;justify-content:space-between;margin-top:50px}.sig small{display:block;font-size:13px}</style></head><body>
+<div class="org">الإدارة المركزية للموارد البشرية<b>إدارة العمل الإجتماعي و الثقافي</b></div>
+<h1>رخصة ${p.kind === 'EXIT' ? 'خروج' : 'دخول'}</h1>
+<div class="f"><b>الإسم واللقب:</b><span>${esc(empName(p.matricule))}</span></div>
+<div class="f"><b>الرقم الآلي:</b><span>${esc(p.matricule)}</span></div>
+<div class="f"><b>التاريخ:</b><span>${dmy(p.date)}</span></div>
+<div class="f"><b>${p.kind === 'EXIT' ? 'توقيت الخروج' : 'توقيت الدخول'}:</b><span>${esc(p.time)}</span></div>
+<div class="f"><b>السبب:</b><span>${esc(p.reason)}</span></div>
+<div class="sig"><div>رأي الرئيس المباشر<small>(الإمضاء والختم)</small></div><div>إمضاء المعني بالأمر</div></div></body></html>`;
+  save(`رخصة-${p.matricule}-${p.date}.html`, html, 'text/html');
+}
 $('attClose').addEventListener('click', () => write((db) => db.doc(`sheets/${S.date}`).set({ date: S.date, closed: !S.sheet?.closed, at: new Date().toISOString() }), S.sheet?.closed ? 'أُعيد فتح البطاقة.' : 'أُقفلت البطاقة.'));
 $('periodForm').addEventListener('submit', (ev) => { ev.preventDefault(); const periods = [...(S.settings.periods || []), { from: $('pFrom').value, to: $('pTo').value, label: $('pLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, periods }), 'أُضيفت الفترة.'); ev.target.reset(); });
 $('holForm').addEventListener('submit', (ev) => { ev.preventDefault(); const holidays = [...(S.settings.holidays || []).filter((h) => h.day !== $('hDay').value), { day: $('hDay').value, label: $('hLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, holidays }), 'أُضيفت العطلة.'); ev.target.reset(); });
@@ -540,6 +614,7 @@ $('lfType').innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${
 $('lfReason').innerHTML = Object.entries(REASONS).map(([k, [l, d]]) => `<option value="${k}">${l} (${d} ${d === 1 ? 'يوم' : 'أيام'})</option>`).join('');
 const y = new Date().getFullYear();
 $('yearSel').innerHTML = [y + 1, y, y - 1, y - 2].map((v) => `<option value="${v}" ${v === y ? 'selected' : ''}>${v}</option>`).join('');
+$('pmDate').value = today(); $('pmMonth').value = today().slice(0, 7);
 renderAll();
 
 function subscribeDay() {
@@ -557,6 +632,7 @@ function subscribeDay() {
   if (can === false) { S.canWrite = false; $('readonly').hidden = false; }
   db.collection('employees').onSnapshot((s) => { S.employees = s.docs.map((d) => d.data()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)); renderAll(); });
   db.collection('leaves').onSnapshot((s) => { S.leaves = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); });
+  db.collection('permits').onSnapshot((s) => { S.permits = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); });
   db.collection('balances').onSnapshot((s) => { S.balances = {}; s.docs.forEach((d) => (S.balances[d.id] = d.data())); renderAll(); });
   db.doc('settings/main').onSnapshot((d) => { S.settings = d.exists ? { periods: [], holidays: [], ...d.data() } : { periods: [], holidays: [] }; renderAll(); });
   db.collection('sheets').where('closed', '==', true).onSnapshot(async (s) => {
@@ -566,7 +642,7 @@ function subscribeDay() {
       const date = d.data().date; if (!date.startsWith(String(S.year))) continue;
       const att = await db.collection('attendance').where('date', '==', date).get();
       const map = {}; att.docs.forEach((x) => { const v = x.data(); map[v.matricule] = v; });
-      S.employees.forEach((e) => { if (rowStatus(e.matricule, date).status !== 'EXPECTED') return; const a = anomalies(map[e.matricule], scheduleFor(date)).find((z) => z.days); if (a) S.absences[e.matricule] = (S.absences[e.matricule] || 0) + a.days; });
+      S.employees.forEach((e) => { if (rowStatus(e.matricule, date).status !== 'EXPECTED') return; const a = anomalies(map[e.matricule], scheduleFor(date), permitsOn(e.matricule, date)).find((z) => z.days); if (a) S.absences[e.matricule] = (S.absences[e.matricule] || 0) + a.days; });
     }
     renderReports();
   });
