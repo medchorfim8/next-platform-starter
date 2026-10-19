@@ -28,6 +28,13 @@ header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px
 h1 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; font-weight: 700; color: var(--accent); }
 h2 { font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 8px; font-weight: 500; text-wrap: balance; }
 nav.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+body.loading nav.tabs, body.loading main > section { visibility: hidden; }
+body.agent-mode nav.tabs button:not([data-tab="agent"]):not([data-tab="permits"]) { display: none; }
+body.agent-mode .admin-only { display: none !important; }
+.who { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); margin-inline-start: auto; }
+.who img { width: 26px; height: 26px; border-radius: 50%; }
+.hits { display: grid; gap: 4px; margin-top: 6px; }
+.hits button { font: inherit; text-align: right; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; color: var(--ink); cursor: pointer; }
 nav.tabs button { font: inherit; border: 0; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
 nav.tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 main.wrap { padding-block: 20px 40px; display: grid; gap: 20px; }
@@ -58,7 +65,7 @@ table.sheet td.rem { text-align: right; min-width: 220px; font-size: .85rem; }
 table.sheet td.na { color: var(--muted); }
 table.sheet tr.leave td { background: var(--accent-soft); }
 .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
-.p-PENDING_MANAGER, .p-PENDING_HR { background: var(--warn-soft); color: var(--warn); }
+.p-PENDING_MANAGER, .p-PENDING_HR, .p-SENT { background: var(--warn-soft); color: var(--warn); }
 .p-APPROVED { background: var(--ok-soft); color: var(--ok); }
 .p-REJECTED, .p-CANCELLED { background: var(--bad-soft); color: var(--bad); }
 .p-RETURNED { background: var(--accent-soft); color: var(--accent); }
@@ -83,19 +90,28 @@ table.sheet tr.leave td { background: var(--accent-soft); }
     <button role="tab" data-tab="reports">التقارير</button>
     <button role="tab" data-tab="settings">الإعدادات</button>
   </nav>
+  <div class="who" id="who"></div>
 </div></header>
 
 <main class="wrap">
   <div class="banner" id="offline" hidden>لا يمكن الوصول إلى قاعدة البيانات في هذا العرض. افتح التطبيقة من حسابك على claude.ai لحفظ المعطيات.</div>
   <div class="banner" id="readonly" hidden>أنت في وضع الاطلاع فقط: لا يمكنك تسجيل أو تعديل المعطيات.</div>
 
+  <div class="panel" id="unlinked" hidden>
+    <h2>حسابك غير مربوط بعد بملفك</h2>
+    <p>لحماية المعطيات، لا يرى كل عون إلا رصيده ووضعيته. أدخل رقمك الآلي ليتحقق منه أعوان الموارد البشرية ويربطوا حسابك بملفك.</p>
+    <form class="row" id="claimForm"><label>الرقم الآلي<input type="text" id="claimMat" inputmode="numeric" required></label><button class="btn" type="submit">إرسال طلب الربط</button></form>
+    <p class="note" id="claimState"></p>
+  </div>
+
   <!-- رصيدي وعطلي -->
   <section data-pane="agent" class="grid2" style="grid-template-columns: 1fr;">
     <div class="panel">
-      <div class="row" style="justify-content: space-between;">
+      <div class="row admin-only" style="justify-content: space-between;">
         <label>العون<select id="agentSel"></select></label>
         <label>السنة<select id="yearSel"></select></label>
       </div>
+      <h2 id="agentTitle" hidden></h2>
       <div class="cards" id="balanceCards" style="margin-top:14px"></div>
     </div>
     <div class="grid2">
@@ -206,8 +222,10 @@ table.sheet tr.leave td { background: var(--accent-soft); }
       <form class="row" id="holForm"><label>اليوم<input type="date" id="hDay" required></label><label>التسمية<input type="text" id="hLabel" required></label><button class="btn" type="submit">إضافة</button></form>
     </div>
     <div class="panel">
-      <h2>الأعوان</h2>
-      <div id="empList"></div>
+      <h2>الأعوان وحساباتهم</h2>
+      <p class="note">اربط كل عون بحسابه حتى يطّلع على رصيده ووضعيته فقط. شارك التطبيقة مع الأعوان بصلاحية «Contributor» أو «Viewer»، ولا تمنح صلاحية «Editor» إلا للموارد البشرية والرؤساء المباشرين، لأنها تفتح كل الملفات.</p>
+      <div id="claimList"></div>
+      <div class="scroll"><table><thead><tr><th>ع/ر</th><th>العون</th><th>الحساب المربوط</th><th></th></tr></thead><tbody id="empList"></tbody></table></div>
       <form class="row" id="empForm"><label>الرقم الآلي<input type="text" id="eMat" required inputmode="numeric"></label><label>الإسم واللقب<input type="text" id="eName" required></label><button class="btn" type="submit">إضافة عون</button></form>
     </div>
   </section>
@@ -228,8 +246,8 @@ const TYPES = {
 };
 const REASONS = { MARRIAGE: ['زواج العون', 3], CHILD_MARRIAGE: ['زواج أحد الأبناء', 1], DEATH_CLOSE: ['وفاة قريب من الدرجة الأولى', 3], DEATH_OTHER: ['وفاة قريب آخر', 1], EXAM: ['اجتياز امتحان', 2], OTHER: ['سبب آخر', 1] };
 const SICK_FULL = 60, SICK_MAX = 365, CARRY_MAX = 30;
-const STATUS = { PENDING_MANAGER: 'عند رئيس القسم', PENDING_HR: 'عند الموارد البشرية', APPROVED: 'مقبولة', REJECTED: 'مرفوضة', RETURNED: 'مُرجعة للتعديل', CANCELLED: 'ملغاة' };
-const ACTIVE = ['PENDING_MANAGER', 'PENDING_HR', 'APPROVED'];
+const STATUS = { SENT: 'مُرسل، في انتظار التسجيل', PENDING_MANAGER: 'عند رئيس القسم', PENDING_HR: 'عند الموارد البشرية', APPROVED: 'مقبولة', REJECTED: 'مرفوضة', RETURNED: 'مُرجعة للتعديل', CANCELLED: 'ملغاة' };
+const ACTIVE = ['SENT', 'PENDING_MANAGER', 'PENDING_HR', 'APPROVED'];
 const MONTHS = ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 const SCHED = {
   DOUBLE: { label: 'نظام الحصتين: 08:00–13:00 و14:00–17:00', s: [['08:00','13:00'],['14:00','17:00']] },
@@ -249,7 +267,7 @@ const fmt = (n) => (Math.round(n * 10) / 10).toString().replace('.', ',');
 const $ = (id) => document.getElementById(id);
 
 // ===== الحالة =====
-const S = { employees: [], leaves: [], permits: [], balances: {}, settings: { periods: [], holidays: [] }, att: {}, sheet: null, agent: null, year: new Date().getFullYear(), date: today(), db: null, canWrite: true };
+const S = { isAdmin: false, user: null, uid: null, inbox: {}, myInbox: {}, mirror: {}, loaded: {}, employees: [], leaves: [], permits: [], balances: {}, settings: { periods: [], holidays: [] }, att: {}, sheet: null, agent: null, year: new Date().getFullYear(), date: today(), db: null, canWrite: true };
 let attUnsub = null, sheetUnsub = null;
 
 function holidaysSet() { return new Set((S.settings.holidays || []).map((h) => h.day)); }
@@ -274,7 +292,7 @@ function balanceOf(m, year) {
   const y0 = `${year}-01-01`, y1 = `${year}-12-31`;
   const ann = leavesOf(m).filter((l) => l.type === 'ANNUAL' && l.start <= y1 && l.end >= y0);
   const used = ann.filter((l) => l.status === 'APPROVED').reduce((s, l) => s + l.days, 0);
-  const pending = ann.filter((l) => l.status === 'PENDING_MANAGER' || l.status === 'PENDING_HR').reduce((s, l) => s + l.days, 0);
+  const pending = ann.filter((l) => ['SENT', 'PENDING_MANAGER', 'PENDING_HR'].includes(l.status)).reduce((s, l) => s + l.days, 0);
   return { entitled, carried, used, pending, remaining: entitled + carried - used - pending };
 }
 // توزيع أيام المرض على شرائح الأجر حسب نافذة 365 يوماً قبل بداية العطلة
@@ -378,11 +396,11 @@ function renderAgent() {
   ].map(([k, v, s]) => `<div class="card"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`).join('');
   const rows = leavesOf(m).sort((a, b) => b.start.localeCompare(a.start));
   $('historyBody').innerHTML = rows.map((l) => {
-    const canCancel = ['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) || (l.status === 'APPROVED' && l.start > today());
+    const canCancel = S.isAdmin && (['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) || (l.status === 'APPROVED' && l.start > today()));
     return `<tr><td>${esc(TYPES[l.type].label)}${l.reason ? `<div class="note">${esc(REASONS[l.reason][0])}</div>` : ''}</td>
       <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}</td><td class="note">${payText(paySplit(l))}</td>
       <td><span class="pill p-${l.status}">${STATUS[l.status]}</span>${l.comment ? `<div class="note">${esc(l.comment)}</div>` : ''}</td>
-      <td class="actions">${l.status === 'RETURNED' ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
+      <td class="actions">${l.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${l.id}">سحب الطلب</button>` : ''}${l.status === 'RETURNED' && S.isAdmin ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">لا توجد عطل مسجلة لهذا العون.</td></tr>';
 }
 function readForm() {
@@ -477,7 +495,18 @@ function renderSettings() {
   }).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
   $('periodList').innerHTML = (S.settings.periods || []).map((p, i) => `<div class="row" style="align-items:center">${esc(p.label || 'حصة واحدة')}: ${dmy(p.from)} ← ${dmy(p.to)} <button class="btn bad" data-act="delPeriod" data-i="${i}">حذف</button></div>`).join('') || '<p class="note">لا توجد فترات.</p>';
   $('holList').innerHTML = (S.settings.holidays || []).slice().sort((a, b) => a.day.localeCompare(b.day)).map((h) => `<div class="row" style="align-items:center">${dmy(h.day)} — ${esc(h.label)} <button class="btn bad" data-act="delHol" data-day="${h.day}">حذف</button></div>`).join('') || '<p class="note">لا توجد عطل رسمية.</p>';
-  $('empList').innerHTML = S.employees.map((e) => `<div>${esc(e.order)}. ${esc(e.matricule)} — ${esc(e.name)}</div>`).join('') || '<p class="note">لا يوجد أعوان بعد.</p>';
+  $('empList').innerHTML = S.employees.map((e) => `<tr><td>${esc(e.order)}</td><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div></td>
+    <td>${e.uid ? `<span data-person="${esc(e.uid)}">…</span>` : '<span class="note">غير مربوط</span>'}
+      <div id="link_${esc(e.matricule)}" hidden><input type="search" data-search="${esc(e.matricule)}" placeholder="ابحث بالإسم" style="width:100%"><div class="hits" id="hits_${esc(e.matricule)}"></div></div></td>
+    <td class="actions">${e.uid ? `<button class="btn bad" data-act="unlink" data-m="${esc(e.matricule)}">فك الربط</button>` : `<button class="btn ghost" data-act="linkOpen" data-m="${esc(e.matricule)}">ربط بحساب</button>`}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
+  const linked = new Set(S.employees.map((e) => e.uid).filter(Boolean));
+  const claims = Object.entries(S.inbox).filter(([uid, d]) => d.claim && !linked.has(uid));
+  $('claimList').innerHTML = claims.length ? `<h2>طلبات ربط الحسابات</h2>` + claims.map(([uid, d]) => {
+    const emp = S.employees.find((e) => e.matricule === d.claim.matricule);
+    return `<div class="row" style="align-items:center; margin-bottom:8px"><span data-person="${esc(uid)}">…</span> يطلب الربط بالرقم الآلي <b>${esc(d.claim.matricule)}</b> ${emp ? `(${esc(emp.name)})` : '<span class="flag">رقم غير موجود</span>'}
+      ${emp && !emp.uid ? `<button class="btn ok" data-act="acceptClaim" data-uid="${esc(uid)}" data-m="${esc(emp.matricule)}">قبول الربط</button>` : ''}</div>`;
+  }).join('') : '';
+  resolvePeople();
 }
 function renderPermits() {
   const sel = $('pmAgent'), cur = sel.value;
@@ -489,24 +518,25 @@ function renderPermits() {
   const rows = S.permits.filter((p) => !month || p.date.startsWith(month)).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const pend = S.permits.filter((p) => p.status === 'PENDING').length;
   $('permitCount').textContent = pend ? `(${pend})` : '';
-  const st = { PENDING: ['p-PENDING_MANAGER', 'في الانتظار'], APPROVED: ['p-APPROVED', 'موافق'], REJECTED: ['p-REJECTED', 'غير موافق'] };
+  const st = { SENT: ['p-SENT', 'مُرسل'], PENDING: ['p-PENDING_MANAGER', 'في الانتظار'], APPROVED: ['p-APPROVED', 'موافق'], REJECTED: ['p-REJECTED', 'غير موافق'] };
   $('permitBody').innerHTML = rows.map((p) => `<tr><td>${esc(empName(p.matricule))}<div class="note">${esc(p.matricule)}</div></td><td>${dmy(p.date)}</td>
     <td>${p.kind === 'EXIT' ? 'خروج' : 'دخول'} على الساعة ${esc(p.time)}</td><td>${esc(p.reason)}</td>
     <td><span class="pill ${st[p.status][0]}">${st[p.status][1]}</span></td>
-    <td class="actions">${p.status === 'PENDING' ? `<button class="btn ok" data-act="pmApprove" data-id="${p.id}">موافق</button><button class="btn bad" data-act="pmReject" data-id="${p.id}">غير موافق</button>` : ''}
+    <td class="actions">${p.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${p.id}">سحب</button>` : ''}${p.status === 'PENDING' && S.isAdmin ? `<button class="btn ok" data-act="pmApprove" data-id="${p.id}">موافق</button><button class="btn bad" data-act="pmReject" data-id="${p.id}">غير موافق</button>` : ''}
       <button class="btn ghost" data-act="pmPrint" data-id="${p.id}">تنزيل للإمضاء</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">لا توجد رخص في هذه الفترة.</td></tr>';
 }
-function renderAll() { fillAgentSelect(); renderPermits(); renderAgent(); renderForm(); renderApprovals(); renderAttendance(); renderReports(); renderSettings(); }
+function renderAll() { fillAgentSelect(); renderPermits(); renderAgent(); renderForm(); renderApprovals(); renderAttendance(); renderReports(); renderSettings(); scheduleMirror(); }
 
 // ===== الكتابة =====
 async function write(fn, okMsg) {
   if (!S.db) return toast('قاعدة البيانات غير متاحة في هذا العرض.');
-  try { await fn(S.db); if (okMsg) toast(okMsg); } catch (e) { toast(e?.code === 'not_granted' ? 'ليست لديك صلاحية التعديل.' : 'تعذّر الحفظ، أعد المحاولة.'); }
+  try { await fn(S.db); if (okMsg) toast(okMsg); } catch (e) { toast(e?.code === 'not_granted' || e?.code === 'invalid_argument' ? (S.isAdmin ? 'ليست لديك صلاحية التعديل.' : 'لا يمكنك الإرسال بصلاحيتك الحالية: اطلب من الموارد البشرية صلاحية «Contributor»، أو قدّم الطلب الورقي.') : 'تعذّر الحفظ، أعد المحاولة.'); }
 }
 $('leaveForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const req = readForm(); const { errs, days } = validate(req);
   if (errs.some((e) => !e.includes('استثنائياً'))) return;
+  if (!S.isAdmin) { sendToInbox({ kind: 'leave', type: req.type, start: req.start, end: req.end, reason: req.reason, extended: req.extended, note: req.note }); $('lfNote').value = ''; return; }
   const status = TYPES[req.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER';
   write((db) => db.collection('leaves').add({ ...req, days, status, createdAt: new Date().toISOString(), comment: '' }), 'أُرسل الطلب.');
   $('lfNote').value = '';
@@ -539,6 +569,17 @@ document.addEventListener('click', (ev) => {
     S.agent = b.dataset.m; $('agentSel').value = S.agent; $('lfStart').value = S.date; $('lfEnd').value = S.date; $('lfType').value = 'ANNUAL';
     $('lfNote').value = `تسوية غياب يوم ${dmy(S.date)}`; switchTab('agent'); renderAgent(); renderForm();
   }
+  if (act === 'cancelSent') {
+    const requests = (S.myInbox.requests || []).filter((r) => `sent_${r.id}` !== id);
+    write((db) => db.doc(`inbox/${S.uid}`).set({ ...S.myInbox, requests }), 'سُحب الطلب.');
+  }
+  if (act === 'linkOpen') { const box = $(`link_${b.dataset.m}`); box.hidden = false; box.querySelector('input').focus(); searchPeople(b.dataset.m, ''); }
+  if (act === 'pickPerson') linkEmployee(b.dataset.m, b.dataset.uid);
+  if (act === 'acceptClaim') linkEmployee(b.dataset.m, b.dataset.uid);
+  if (act === 'unlink') {
+    const e = S.employees.find((x) => x.matricule === b.dataset.m);
+    write((db) => db.doc(`employees/${e.matricule}`).set({ matricule: e.matricule, name: e.name, order: e.order }), 'فُكّ الربط.');
+  }
   if (act === 'newPermit') {
     $('pmAgent').value = b.dataset.m; $('pmDate').value = S.date; $('pmKind').value = 'EXIT'; $('pmTime').value = ''; $('pmReason').value = '';
     switchTab('permits'); renderPermits(); $('pmTime').focus();
@@ -549,8 +590,8 @@ document.addEventListener('click', (ev) => {
     const m = b.dataset.m, entitled = +$(`be_${m}`).value, carried = Math.min(CARRY_MAX, +$(`bc_${m}`).value);
     write((db) => db.doc(`balances/${m}_${S.year}`).set({ matricule: m, year: S.year, entitled, carried }), 'حُفظ الرصيد.');
   }
-  if (act === 'delPeriod') { const periods = S.settings.periods.filter((_, i) => i !== +b.dataset.i); write((db) => db.doc('settings/main').update({ periods }), 'حُذفت الفترة.'); }
-  if (act === 'delHol') { const holidays = S.settings.holidays.filter((h) => h.day !== b.dataset.day); write((db) => db.doc('settings/main').update({ holidays }), 'حُذفت العطلة.'); }
+  if (act === 'delPeriod') { const periods = S.settings.periods.filter((_, i) => i !== +b.dataset.i); write((db) => db.doc('public/settings').update({ periods }), 'حُذفت الفترة.'); }
+  if (act === 'delHol') { const holidays = S.settings.holidays.filter((h) => h.day !== b.dataset.day); write((db) => db.doc('public/settings').update({ holidays }), 'حُذفت العطلة.'); }
 });
 document.addEventListener('change', (ev) => {
   const el = ev.target; if (!el.dataset?.m || !el.dataset.f) return;
@@ -561,7 +602,8 @@ $('permitForm').addEventListener('submit', (ev) => {
   ev.preventDefault();
   const p = { matricule: $('pmAgent').value, kind: $('pmKind').value, date: $('pmDate').value, time: $('pmTime').value, reason: $('pmReason').value.trim(), status: 'PENDING', createdAt: new Date().toISOString() };
   if (!p.matricule || !p.date || !p.time || !p.reason) return toast('أكمل كل خانات الرخصة.');
-  write((db) => db.collection('permits').add(p), 'سُجّلت الرخصة في انتظار رأي الرئيس المباشر.');
+  if (!S.isAdmin) sendToInbox({ kind: 'permit', type: p.kind, date: p.date, time: p.time, reason: p.reason });
+  else write((db) => db.collection('permits').add(p), 'سُجّلت الرخصة في انتظار رأي الرئيس المباشر.');
   $('pmReason').value = ''; $('pmTime').value = '';
 });
 ['pmKind', 'pmMonth'].forEach((id) => $(id).addEventListener('input', renderPermits));
@@ -578,8 +620,8 @@ function printPermit(p) {
   save(`رخصة-${p.matricule}-${p.date}.html`, html, 'text/html');
 }
 $('attClose').addEventListener('click', () => write((db) => db.doc(`sheets/${S.date}`).set({ date: S.date, closed: !S.sheet?.closed, at: new Date().toISOString() }), S.sheet?.closed ? 'أُعيد فتح البطاقة.' : 'أُقفلت البطاقة.'));
-$('periodForm').addEventListener('submit', (ev) => { ev.preventDefault(); const periods = [...(S.settings.periods || []), { from: $('pFrom').value, to: $('pTo').value, label: $('pLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, periods }), 'أُضيفت الفترة.'); ev.target.reset(); });
-$('holForm').addEventListener('submit', (ev) => { ev.preventDefault(); const holidays = [...(S.settings.holidays || []).filter((h) => h.day !== $('hDay').value), { day: $('hDay').value, label: $('hLabel').value.trim() }]; write((db) => db.doc('settings/main').set({ ...S.settings, holidays }), 'أُضيفت العطلة.'); ev.target.reset(); });
+$('periodForm').addEventListener('submit', (ev) => { ev.preventDefault(); const periods = [...(S.settings.periods || []), { from: $('pFrom').value, to: $('pTo').value, label: $('pLabel').value.trim() }]; write((db) => db.doc('public/settings').set({ ...S.settings, periods }), 'أُضيفت الفترة.'); ev.target.reset(); });
+$('holForm').addEventListener('submit', (ev) => { ev.preventDefault(); const holidays = [...(S.settings.holidays || []).filter((h) => h.day !== $('hDay').value), { day: $('hDay').value, label: $('hLabel').value.trim() }]; write((db) => db.doc('public/settings').set({ ...S.settings, holidays }), 'أُضيفت العطلة.'); ev.target.reset(); });
 $('empForm').addEventListener('submit', (ev) => { ev.preventDefault(); const m = $('eMat').value.trim(); write((db) => db.doc(`employees/${m}`).set({ matricule: m, name: $('eName').value.trim(), order: S.employees.length + 1 }), 'أُضيف العون.'); ev.target.reset(); });
 
 // ===== التنزيلات =====
@@ -617,6 +659,92 @@ $('yearSel').innerHTML = [y + 1, y, y - 1, y - 2].map((v) => `<option value="${v
 $('pmDate').value = today(); $('pmMonth').value = today().slice(0, 7);
 renderAll();
 
+// ===== الحسابات والخصوصية =====
+// كل عون لا يقرأ إلا وثيقته mirror/<حسابه> التي تكتبها صفحة الموارد البشرية، ويرسل طلباته إلى inbox/<حسابه>.
+let S_people = {};
+async function resolvePeople() {
+  const els = [...document.querySelectorAll('[data-person]')]; if (!els.length || !S.user) return;
+  const ids = [...new Set(els.map((x) => x.dataset.person))];
+  try { S_people = { ...S_people, ...(await S.user.profiles(ids)) }; } catch {}
+  els.forEach((x) => { const p = S_people[x.dataset.person]; x.textContent = p?.name || 'حساب بدون إسم ظاهر'; });
+}
+async function searchPeople(m, q) {
+  const box = $(`hits_${m}`); if (!box || !S.user) return;
+  const hits = await S.user.search(q);
+  box.innerHTML = '';
+  hits.forEach((h) => { const btn = document.createElement('button'); btn.type = 'button'; btn.dataset.act = 'pickPerson'; btn.dataset.m = m; btn.dataset.uid = h.id; btn.textContent = (h.name || 'بدون إسم') + (h.guest ? ' (ضيف)' : ''); box.appendChild(btn); });
+  if (!hits.length) box.innerHTML = '<span class="note">لا نتائج. يمكن للعون أن يفتح التطبيقة ويرسل طلب ربط برقمه الآلي.</span>';
+}
+document.addEventListener('input', (ev) => { const m = ev.target.dataset?.search; if (m) searchPeople(m, ev.target.value); });
+function linkEmployee(m, uid) {
+  if (S.employees.some((e) => e.uid === uid && e.matricule !== m)) return toast('هذا الحساب مربوط بعون آخر.');
+  write((db) => db.doc(`employees/${m}`).update({ uid }), 'رُبط الحساب بالعون.');
+}
+function sendToInbox(r) {
+  const requests = [...(S.myInbox.requests || []), { ...r, id: Date.now().toString(36), at: new Date().toISOString() }];
+  write((db) => db.doc(`inbox/${S.uid}`).set({ ...S.myInbox, requests }), 'أُرسل الطلب إلى الموارد البشرية.');
+}
+$('claimForm').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  write((db) => db.doc(`inbox/${S.uid}`).set({ ...S.myInbox, claim: { matricule: $('claimMat').value.trim(), at: new Date().toISOString() } }), 'أُرسل طلب الربط.');
+});
+// الموارد البشرية: تسجيل طلبات الأعوان الواردة آلياً
+let importing = false;
+async function importInbox() {
+  if (!S.isAdmin || importing || !S.loaded.leaves || !S.loaded.permits || !S.loaded.employees || !S.loaded.inbox) return;
+  importing = true;
+  try {
+    for (const [uid, d] of Object.entries(S.inbox)) {
+      const emp = S.employees.find((e) => e.uid === uid); if (!emp) continue;
+      for (const r of d.requests || []) {
+        const id = `in_${uid.replace(/[^A-Za-z0-9_-]/g, '')}_${r.id}`;
+        if (r.kind === 'leave' && TYPES[r.type] && !S.leaves.some((l) => l.id === id)) {
+          const ref = S.db.doc(`leaves/${id}`); if ((await ref.get()).exists) continue;
+          const req = { matricule: emp.matricule, type: r.type, start: r.start, end: r.end, reason: r.reason || null, extended: !!r.extended, note: r.note || '' };
+          const { days } = validate({ ...req, id });
+          await ref.set({ ...req, days: Math.max(days, 0), status: TYPES[r.type].direct ? 'PENDING_HR' : 'PENDING_MANAGER', createdAt: r.at, comment: '', source: 'agent' });
+        }
+        if (r.kind === 'permit' && !S.permits.some((x) => x.id === id)) {
+          const ref = S.db.doc(`permits/${id}`); if ((await ref.get()).exists) continue;
+          await ref.set({ matricule: emp.matricule, kind: r.type === 'ENTRY' ? 'ENTRY' : 'EXIT', date: r.date, time: r.time, reason: r.reason || '', status: 'PENDING', createdAt: r.at, source: 'agent' });
+        }
+      }
+    }
+  } catch {} finally { importing = false; }
+}
+// الموارد البشرية: نسخ رصيد ووضعية كل عون مربوط إلى وثيقته الخاصة
+let mirrorTimer = null;
+function scheduleMirror() { if (S.isAdmin) { clearTimeout(mirrorTimer); mirrorTimer = setTimeout(syncMirrors, 1500); } }
+async function syncMirrors() {
+  if (!S.loaded.leaves || !S.loaded.permits || !S.loaded.employees || !S.loaded.balances || !S.loaded.mirror) return;
+  const from = `${S.year - 1}-01-01`, linked = new Set();
+  for (const e of S.employees) {
+    if (!e.uid) continue; linked.add(e.uid);
+    const m = e.matricule;
+    const doc = {
+      matricule: m, name: e.name,
+      leaves: leavesOf(m).filter((l) => l.end >= from).map((l) => ({ id: l.id, type: l.type, start: l.start, end: l.end, days: l.days, status: l.status, comment: l.comment || '', reason: l.reason || null, note: l.note || '' })),
+      balances: Object.fromEntries(Object.entries(S.balances).filter(([k]) => k.startsWith(m + '_'))),
+      permits: S.permits.filter((p) => p.matricule === m && p.date >= from).map((p) => ({ id: p.id, kind: p.kind, date: p.date, time: p.time, reason: p.reason, status: p.status })),
+      absences: S.absences?.[m] || 0,
+    };
+    const { updatedAt, ...oldBody } = S.mirror[e.uid] || {};
+    if (JSON.stringify(oldBody) !== JSON.stringify(doc)) { try { await S.db.doc(`mirror/${e.uid}`).set({ ...doc, updatedAt: new Date().toISOString() }); } catch {} }
+  }
+  for (const uid of Object.keys(S.mirror)) if (!linked.has(uid)) { try { await S.db.doc(`mirror/${uid}`).delete(); } catch {} }
+}
+function applyMirror(d) {
+  const m = d.matricule;
+  S.employees = [{ matricule: m, name: d.name, order: 1 }]; S.agent = m;
+  const sent = S.myInbox.requests || [];
+  const imported = new Set([...(d.leaves || []), ...(d.permits || [])].map((x) => x.id));
+  const pend = sent.filter((r) => ![...imported].some((id) => id.endsWith('_' + r.id)));
+  S.leaves = [...(d.leaves || []).map((l) => ({ ...l, matricule: m })), ...pend.filter((r) => r.kind === 'leave' && TYPES[r.type]).map((r) => ({ id: `sent_${r.id}`, matricule: m, type: r.type, start: r.start, end: r.end, reason: r.reason, note: r.note, status: 'SENT', days: Math.max(countDays(r.start, r.end, TYPES[r.type].mode), 0) }))];
+  S.permits = [...(d.permits || []).map((p) => ({ ...p, matricule: m })), ...pend.filter((r) => r.kind === 'permit').map((r) => ({ id: `sent_${r.id}`, matricule: m, kind: r.type, date: r.date, time: r.time, reason: r.reason, status: 'SENT' }))];
+  S.balances = d.balances || {}; S.absences = { [m]: d.absences || 0 };
+  $('agentTitle').hidden = false; $('agentTitle').textContent = `${d.name} — الرقم الآلي ${m}`;
+}
+
 function subscribeDay() {
   if (!S.db) return renderAttendance();
   attUnsub?.(); sheetUnsub?.(); S.att = {}; S.sheet = null; renderAttendance();
@@ -624,17 +752,46 @@ function subscribeDay() {
   sheetUnsub = S.db.doc(`sheets/${S.date}`).onSnapshot((d) => { S.sheet = d.exists ? d.data() : null; renderAttendance(); });
 }
 (async () => {
+  document.body.classList.add('loading');
   const db = await window.claude?.use?.('db');
-  if (!db) { $('offline').hidden = false; return; }
+  if (!db) { document.body.classList.remove('loading'); $('offline').hidden = false; return; }
   S.db = db;
-  const user = await window.claude.use('user');
+  const user = await window.claude.use('user'); S.user = user;
+  const me = user ? await user.me() : null;
+  S.uid = me?.id || null; S.isAdmin = !!me?.canEdit;
   const can = await user?.can?.('data.write');
-  if (can === false) { S.canWrite = false; $('readonly').hidden = false; }
-  db.collection('employees').onSnapshot((s) => { S.employees = s.docs.map((d) => d.data()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)); renderAll(); });
-  db.collection('leaves').onSnapshot((s) => { S.leaves = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); });
-  db.collection('permits').onSnapshot((s) => { S.permits = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); });
-  db.collection('balances').onSnapshot((s) => { S.balances = {}; s.docs.forEach((d) => (S.balances[d.id] = d.data())); renderAll(); });
-  db.doc('settings/main').onSnapshot((d) => { S.settings = d.exists ? { periods: [], holidays: [], ...d.data() } : { periods: [], holidays: [] }; renderAll(); });
+  if (can === false && S.isAdmin) { S.canWrite = false; $('readonly').hidden = false; }
+  if (me?.name) { const w = $('who'); w.innerHTML = ''; const img = document.createElement('img'); img.src = me.avatarUrl; img.alt = ''; const sp = document.createElement('span'); sp.textContent = me.name + (S.isAdmin ? ' — الموارد البشرية' : ''); w.append(img, sp); }
+  db.doc('public/settings').onSnapshot((d) => { S.settings = d.exists ? { periods: [], holidays: [], ...d.data() } : { periods: [], holidays: [] }; renderAll(); });
+
+  if (!S.isAdmin) {
+    document.body.classList.add('agent-mode');
+    const startTab = document.querySelector('#tabs button[aria-selected="true"]')?.dataset.tab === 'permits' ? 'permits' : 'agent';
+    switchTab(startTab);
+    document.body.classList.remove('loading');
+    if (!S.uid) { $('offline').hidden = false; $('offline').textContent = 'سجّل الدخول بحسابك على claude.ai للاطلاع على رصيدك.'; document.querySelectorAll('main > section').forEach((x) => (x.hidden = true)); return; }
+    let mirrorDoc = null;
+    const refresh = () => {
+      const linked = !!mirrorDoc;
+      $('unlinked').hidden = linked;
+      if (linked) { applyMirror(mirrorDoc); const t = document.querySelector('#tabs button[aria-selected="true"]')?.dataset.tab; switchTab(t === 'permits' ? 'permits' : 'agent'); }
+      else document.querySelectorAll('main > section').forEach((x) => (x.hidden = true));
+      $('claimState').textContent = S.myInbox.claim ? `أُرسل طلب الربط بالرقم الآلي ${S.myInbox.claim.matricule} بتاريخ ${dmy(S.myInbox.claim.at.slice(0, 10))}. سيظهر رصيدك بعد قبوله.` : '';
+      if (linked) renderAll();
+    };
+    db.doc(`inbox/${S.uid}`).onSnapshot((d) => { S.myInbox = d.exists ? d.data() : {}; refresh(); }, () => {});
+    db.doc(`mirror/${S.uid}`).onSnapshot((d) => { mirrorDoc = d.exists ? d.data() : null; refresh(); }, () => refresh());
+    return;
+  }
+
+  document.body.classList.remove('loading');
+  const done = (k) => { S.loaded[k] = true; importInbox(); };
+  db.collection('employees').onSnapshot((s) => { S.employees = s.docs.map((d) => d.data()).sort((a, b) => (a.order ?? 99) - (b.order ?? 99)); renderAll(); done('employees'); });
+  db.collection('leaves').onSnapshot((s) => { S.leaves = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); done('leaves'); });
+  db.collection('permits').onSnapshot((s) => { S.permits = s.docs.map((d) => ({ id: d.id, ...d.data() })); renderAll(); done('permits'); });
+  db.collection('balances').onSnapshot((s) => { S.balances = {}; s.docs.forEach((d) => (S.balances[d.id] = d.data())); renderAll(); done('balances'); });
+  db.collection('inbox').onSnapshot((s) => { S.inbox = {}; s.docs.forEach((d) => (S.inbox[d.id] = d.data())); renderSettings(); done('inbox'); });
+  db.collection('mirror').onSnapshot((s) => { S.mirror = {}; s.docs.forEach((d) => (S.mirror[d.id] = d.data())); S.loaded.mirror = true; scheduleMirror(); });
   db.collection('sheets').where('closed', '==', true).onSnapshot(async (s) => {
     // غيابات غير مبررة في البطاقات المقفلة (للتقارير)
     S.absences = {};
@@ -644,7 +801,7 @@ function subscribeDay() {
       const map = {}; att.docs.forEach((x) => { const v = x.data(); map[v.matricule] = v; });
       S.employees.forEach((e) => { if (rowStatus(e.matricule, date).status !== 'EXPECTED') return; const a = anomalies(map[e.matricule], scheduleFor(date), permitsOn(e.matricule, date)).find((z) => z.days); if (a) S.absences[e.matricule] = (S.absences[e.matricule] || 0) + a.days; });
     }
-    renderReports();
+    renderReports(); scheduleMirror();
   });
   subscribeDay();
 })();
