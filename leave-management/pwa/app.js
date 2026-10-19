@@ -53,7 +53,7 @@ function supabaseApi() {
 }
 
 function demoApi() {
-  const KEY = 'demo-conges-v3';
+  const KEY = 'demo-conges-v4';
   const seed = () => ({
     employees: [
       { matricule: 'RH-001', name: 'الموارد البشرية', email: 'rh@demo.tn', role: 'hr', sort: 0 },
@@ -64,6 +64,9 @@ function demoApi() {
     balances: [{ matricule: '10001', year: YEAR, entitled: 30, carried: 2 }, { matricule: '10002', year: YEAR, entitled: 30, carried: 6 }, { matricule: '10003', year: YEAR, entitled: 30, carried: 0 }],
     leaves: [
       { id: 'd1', matricule: '10002', type: 'ANNUAL', start_date: `${YEAR}-08-03`, end_date: `${YEAR}-08-12`, days: 10, status: 'APPROVED', log: [] },
+      { id: 'd3', matricule: '10002', type: 'SICK', start_date: `${YEAR}-03-02`, end_date: `${YEAR}-03-04`, days: 3, status: 'APPROVED', log: [] },
+      { id: 'd4', matricule: '10001', type: 'ANNUAL', start_date: `${YEAR}-07-20`, end_date: `${YEAR}-07-31`, days: 12, status: 'APPROVED', title_year: YEAR, log: [] },
+      { id: 'd5', matricule: 'RH-001', type: 'EXCEPTIONAL', reason: 'زواج أحد الأبناء', start_date: `${YEAR}-05-15`, end_date: `${YEAR}-05-15`, days: 1, status: 'APPROVED', log: [] },
       { id: 'd2', matricule: '10003', type: 'EXCEPTIONAL', reason: 'اجتياز امتحان', start_date: `${YEAR}-11-03`, end_date: `${YEAR}-11-04`, days: 2, status: 'PENDING_MANAGER', log: [] },
     ],
     holidays: [{ day: `${YEAR}-12-17`, label: 'عيد الثورة' }],
@@ -123,7 +126,7 @@ function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = fals
 async function run(btn, fn) { const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = '…'; } try { return await fn(); } catch (e) { toast(e.message || 'حدث خطأ، أعد المحاولة'); throw e; } finally { if (btn) { btn.disabled = false; btn.textContent = old; } } }
 const show = (id) => ['vLogin', 'vApp'].forEach((v) => ($(v).hidden = v !== id));
 function go(page) {
-  ['pMine', 'pApprovals', 'pStaff'].forEach((p) => ($(p).hidden = p !== page));
+  ['pMine', 'pHistory', 'pApprovals', 'pStaff'].forEach((p) => ($(p).hidden = p !== page));
   document.querySelectorAll('#nav button').forEach((b) => { if (b.dataset.p === page) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   if (page === 'pApprovals') loadApprovals();
   if (page === 'pStaff') loadStaff();
@@ -162,12 +165,16 @@ async function loadMine() {
   $('stUsed').textContent = bal ? fmt(bal.used) : '—';
   $('stPending').textContent = bal ? fmt(bal.pending) : '—';
   $('stSick').textContent = fmt(leaves.filter((l) => l.type === 'SICK' && l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR))).reduce((s, l) => s + Number(l.days), 0));
-  $('myList').innerHTML = leaves.length ? leaves.map((l) => `<div class="item">
+  const item = (l) => `<div class="item">
       <div class="t"><span>${esc(TYPES[l.type])}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
-      <div class="d">من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} ${Number(l.days) <= 10 ? 'أيام' : 'يوماً'}${l.reason ? ` — ${esc(l.reason)}` : ''}</div>
+      <div class="d">من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} ${Number(l.days) === 1 ? 'يوم' : Number(l.days) <= 10 ? 'أيام' : 'يوماً'}${l.reason ? ` — ${esc(l.reason)}` : ''}</div>
       ${l.comment ? `<div class="d">التعليل: ${esc(l.comment)}</div>` : ''}
       <div class="actions">${FORM906.includes(l.type) && l.status !== 'CANCELLED' ? `<button class="btn sm ghost" data-906="${l.id}">نموذج 906 (PDF)</button>` : ''}${['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) ? `<button class="btn sm bad" data-cancel="${l.id}">سحب الطلب</button>` : ''}</div>
-    </div>`).join('') : '<div class="empty">لا توجد عطل مسجلة بعد.</div>';
+    </div>`;
+  const empty = '<div class="empty">لا توجد عطل مسجلة بعد. اضغط «+ طلب عطلة» لتقديم أول طلب.</div>';
+  $('myList').innerHTML = leaves.length ? leaves.slice(0, 3).map(item).join('') : empty;
+  $('histList').innerHTML = leaves.length ? leaves.map(item).join('') : empty;
+  $('seeAll').hidden = leaves.length <= 3;
 }
 document.addEventListener('click', (ev) => {
   const c = ev.target.closest('[data-cancel]'); if (!c) return;
@@ -340,6 +347,7 @@ $('empForm').addEventListener('submit', (ev) => {
   run(ev.submitter, async () => { await API.addEmployee(e); toast('أُضيف العون. يمكنه الآن الدخول ببريده.'); ev.target.reset(); await loadStaff(); });
 });
 
+$('seeAll').onclick = () => go('pHistory');
 $('nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-p]'); if (b) go(b.dataset.p); });
 
 // ===== التثبيت على الهاتف =====
@@ -367,7 +375,7 @@ async function start() {
     const staff = S.me.role !== 'agent';
     document.querySelector('[data-p="pApprovals"]').hidden = !staff;
     document.querySelector('[data-p="pStaff"]').hidden = S.me.role !== 'hr';
-    $('nav').hidden = !staff;
+    $('nav').hidden = false;
     go('pMine');
     await loadMine();
     if (staff) loadApprovals();
