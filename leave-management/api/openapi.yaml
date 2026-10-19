@@ -75,5 +75,17 @@ paths:
         - { name: to, in: query, schema: { type: string, format: date } }
         - { name: format, in: query, schema: { type: string, enum: [json, csv, pdf, xlsx] } }
       responses: { '200': { description: OK } }
+  /attendance/sheets:
+    post: { summary: إعداد بطاقة الحضور ليوم ووحدة مع التأشير الآلي على الأعوان في عطلة, parameters: [{ name: unit, in: query, required: true, schema: { type: integer } }, { name: date, in: query, required: true, schema: { type: string, format: date } }], responses: { '201': { description: Created } } }
+  /attendance/sheets/{id}.pdf:
+    get: { summary: طباعة البطاقة (A4 أفقي) بنفس شكل النموذج الورقي, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: PDF } } }
+  /attendance/sheets/{id}/entries:
+    put: { summary: إدخال توقيتات الدخول والخروج (يدوياً أو من جهاز التوقيت), parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: OK } } }
+  /attendance/sheets/{id}/import:
+    post: { summary: استيراد بطاقة مرقونة CSV + النسخة الممسوحة الممضاة, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: OK } } }
+  /attendance/sheets/{id}/close:
+    post: { summary: إقفال البطاقة وتحليل الغيابات والتأخير وتوليد مقترحات التسوية, parameters: [{ name: id, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: OK } } }
+  /attendance/entries/{sheetId}/{employeeId}/resolve:
+    post: { summary: تسوية غياب (مبرر / مرض / خصم من الرصيد / بدون أجر) — ينشئ طلب العطلة المقابل آلياً, parameters: [{ name: sheetId, in: path, required: true, schema: { type: integer } }, { name: employeeId, in: path, required: true, schema: { type: integer } }], responses: { '200': { description: OK } } }
   /payroll/exports:
     get: { summary: ملف الخصومات الشهرية لمنظومة الأجور, parameters: [{ name: month, in: query, required: true, schema: { type: string } }], responses: { '200': { description: CSV } } }

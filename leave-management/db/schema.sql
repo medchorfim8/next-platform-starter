@@ -11,15 +11,15 @@ CREATE TABLE org_unit (            -- الهيكل التنظيمي (وزارة 
 
 CREATE TABLE employee (            -- العون
   id             serial PRIMARY KEY,
-  matricule      text UNIQUE NOT NULL,          -- المعرف الوحيد (رقم المنظومة إنصاف)
-  cin_enc        bytea NOT NULL,                -- رقم بطاقة التعريف مشفّر (pgp_sym_encrypt)
+  matricule      text UNIQUE NOT NULL,          -- الرقم الآلي (المعرّف الوحيد في منظومة الأجور)
+  cin_enc        bytea,                         -- رقم بطاقة التعريف مشفّر (pgp_sym_encrypt) — يُستورد من منظومة الأجور
   first_name_ar  text NOT NULL,
   last_name_ar   text NOT NULL,
   gender         char(1) CHECK (gender IN ('M','F')),
   grade          text,                          -- الرتبة
   category       text,                          -- الصنف (أ1، أ2، ب، ج، د) أو عامل
   status         text NOT NULL DEFAULT 'ACTIVE',-- مباشر / عدم مباشرة / إلحاق / متقاعد
-  hire_date      date NOT NULL,                 -- تاريخ الانتداب
+  hire_date      date,                          -- تاريخ الانتداب (يُستورد؛ لا يُفتح الاستحقاق قبل تعبئته)
   org_unit_id    int NOT NULL REFERENCES org_unit(id),
   ldap_dn        text UNIQUE,
   email          text,
@@ -151,4 +151,32 @@ CREATE TABLE audit_log (
   prev_hash   text,
   hash        text NOT NULL
 );
+-- بطاقة الحضور اليومية (نفس أعمدة البطاقة الورقية)
+CREATE TABLE attendance_sheet (
+  id           bigserial PRIMARY KEY,
+  org_unit_id  int NOT NULL REFERENCES org_unit(id),
+  day          date NOT NULL,
+  schedule     text NOT NULL CHECK (schedule IN ('DOUBLE','SINGLE')),   -- حصتان / حصة واحدة
+  status       text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED','VALIDATED')),
+  scan_doc_id  uuid REFERENCES document(id),     -- نسخة ممسوحة من البطاقة الورقية الممضاة
+  validated_by int REFERENCES employee(id),       -- رئيس القسم
+  validated_at timestamptz,
+  UNIQUE (org_unit_id, day)
+);
+
+CREATE TABLE attendance_entry (
+  sheet_id     bigint NOT NULL REFERENCES attendance_sheet(id),
+  line_no      int NOT NULL,                      -- ع/ر
+  employee_id  int NOT NULL REFERENCES employee(id),
+  status       text NOT NULL CHECK (status IN ('EXPECTED','ON_LEAVE','HOLIDAY','WEEKEND')),
+  leave_id     uuid REFERENCES leave_request(id), -- العطلة التي بُنيت عليها الملاحظة
+  in1 time, out1 time,                            -- الحصة الصباحية: دخول / خروج
+  in2 time, out2 time,                            -- الحصة المسائية: دخول / خروج
+  anomalies    jsonb NOT NULL DEFAULT '[]',       -- ABSENT, HALF_ABSENT, LATE, EARLY_LEAVE, MISSING_PUNCH
+  remark       text,                              -- ملاحظات
+  resolution   text CHECK (resolution IN ('JUSTIFIED','SICK','DEDUCT_ANNUAL','UNPAID')),
+  resolved_request uuid REFERENCES leave_request(id),
+  PRIMARY KEY (sheet_id, employee_id)
+);
+
 REVOKE UPDATE, DELETE ON audit_log, balance_ledger FROM PUBLIC;
