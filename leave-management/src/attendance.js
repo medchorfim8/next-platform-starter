@@ -3,12 +3,12 @@
 // دخول/خروج (الحصة المسائية)، ملاحظات.
 import { LEAVE_TYPES, countDays } from './rules.js';
 
-// التوقيت الإداري المعتمد: 08:00–13:00 و14:00–17:00، والحصة الواحدة (الصيف ورمضان) 07:30–13:30
+// التوقيت الإداري المعتمد: 08:00–13:00 و14:00–17:00، والحصة الواحدة (الصيف ورمضان) 07:30–14:30 ويوم الجمعة 07:30–13:30.
+// لا يُحتسب التأخير: تُراعى ظروف الأعوان (توصيل الأبناء، حركة المرور، الطوارئ والالتزامات العائلية).
 export const SCHEDULES = {
   DOUBLE: { label: 'نظام الحصتين', sessions: [{ in: '08:00', out: '13:00' }, { in: '14:00', out: '17:00' }] },
-  SINGLE: { label: 'نظام الحصة الواحدة', sessions: [{ in: '07:30', out: '13:30' }] },
+  SINGLE: { label: 'نظام الحصة الواحدة', sessions: [{ in: '07:30', out: '14:30' }], friday: [{ in: '07:30', out: '13:30' }] },
 };
-export const TOLERANCE_MIN = 10; // دقائق التسامح قبل اعتبار التأخير
 
 const ACTIVE = ['APPROVED', 'IN_PROGRESS', 'COMPLETED', 'PENDING_HR']; // PENDING_HR: مرض/ولادة مسجلة في انتظار مراقبة الوثيقة
 const MONTHS = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -20,10 +20,12 @@ export const formatDateAr = (iso) => {
 const dmy = (iso) => iso.split('-').reverse().join('/');
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
 
-/** نظام التوقيت المنطبق في تاريخ معيّن: حصة واحدة في الصيف ورمضان (الفترات تُضبط سنوياً). */
+/** نظام التوقيت المنطبق في تاريخ معيّن: حصة واحدة في الصيف ورمضان (الفترات تُضبط سنوياً)، مع توقيت خاص يوم الجمعة. */
 export function scheduleFor(date, singleSessionPeriods = []) {
   const single = singleSessionPeriods.some((p) => date >= p.from && date <= p.to);
-  return single ? SCHEDULES.SINGLE : SCHEDULES.DOUBLE;
+  const s = single ? SCHEDULES.SINGLE : SCHEDULES.DOUBLE;
+  const friday = new Date(date + 'T00:00:00Z').getUTCDay() === 5;
+  return { label: s.label, sessions: friday && s.friday ? s.friday : s.sessions };
 }
 
 /** إعداد بطاقة اليوم: قائمة الأعوان مع التأشير آلياً على من هو في عطلة. */
@@ -45,8 +47,11 @@ export function buildAttendanceSheet({ date, unit, employees, leaves = [], holid
   return { date, dateAr: formatDateAr(date), unit, schedule, rows };
 }
 
-/** تحليل حضور عون في يوم: يُرجع قائمة المخالفات. punches = [{in:'08:05', out:'13:00'}, {in, out}] بنفس ترتيب الحصص. */
-export function analyzeRow(row, schedule, tolerance = TOLERANCE_MIN) {
+/**
+ * تحليل حضور عون في يوم: يُرجع قائمة الملاحظات. punches = [{in:'08:05', out:'13:00'}, {in, out}] بنفس ترتيب الحصص.
+ * التأخير في الدخول لا يُحتسب ولا يُسجَّل.
+ */
+export function analyzeRow(row, schedule) {
   if (row.status !== 'EXPECTED') return [];
   const out = [];
   const missed = [];
@@ -54,7 +59,6 @@ export function analyzeRow(row, schedule, tolerance = TOLERANCE_MIN) {
     const p = row.punches[i] || {};
     if (!p.in && !p.out) { missed.push(i); return; }
     if (!p.in || !p.out) out.push({ code: 'MISSING_PUNCH', session: i, label: `تسجيل ناقص في الحصة ${i + 1}` });
-    if (p.in && toMin(p.in) > toMin(s.in) + tolerance) out.push({ code: 'LATE', session: i, minutes: toMin(p.in) - toMin(s.in), label: `تأخير ${toMin(p.in) - toMin(s.in)} دق` });
     if (p.out && toMin(p.out) < toMin(s.out)) out.push({ code: 'EARLY_LEAVE', session: i, minutes: toMin(s.out) - toMin(p.out), label: `خروج مبكر ${toMin(s.out) - toMin(p.out)} دق` });
   });
   if (missed.length === schedule.sessions.length) out.push({ code: 'ABSENT', days: 1, label: 'غياب غير مبرر' });
@@ -88,7 +92,6 @@ export function closeSheet(sheet, balances = {}) {
     present: rows.filter((r) => r.status === 'EXPECTED' && !r.anomalies.some((a) => a.code === 'ABSENT')).length,
     onLeave: count('ON_LEAVE'),
     absentUnjustified: rows.filter((r) => r.anomalies.some((a) => a.code === 'ABSENT')).length,
-    late: rows.filter((r) => r.anomalies.some((a) => a.code === 'LATE')).length,
   };
   return { ...sheet, rows, summary };
 }
