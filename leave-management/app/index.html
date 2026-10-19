@@ -77,6 +77,8 @@ table.sheet tr.leave td { background: var(--accent-soft); }
 .toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: .9rem; }
 .banner { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions .btn { white-space: nowrap; }
+[hidden] { display: none !important; }
 @media (prefers-reduced-motion: no-preference) { nav.tabs button { transition: background .15s; } }
 </style>
 
@@ -403,7 +405,7 @@ function renderAgent() {
     return `<tr><td>${esc(TYPES[l.type].label)}${l.reason ? `<div class="note">${esc(REASONS[l.reason][0])}</div>` : ''}</td>
       <td>${dmy(l.start)} ← ${dmy(l.end)}</td><td>${fmt(l.days)}</td><td class="note">${payText(paySplit(l))}</td>
       <td><span class="pill p-${l.status}">${STATUS[l.status]}</span>${l.comment ? `<div class="note">${esc(l.comment)}</div>` : ''}</td>
-      <td class="actions">${FORM906.includes(l.type) ? `<button class="btn ghost" data-act="form906" data-id="${l.id}">طلب العطلة (906)</button>` : ''}${l.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${l.id}">سحب الطلب</button>` : ''}${l.status === 'RETURNED' && S.isAdmin ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
+      <td class="actions">${FORM906.includes(l.type) ? `<button class="btn ghost" data-act="form906" data-id="${l.id}" title="تنزيل طلب العطلة الرسمي عدد 906">نموذج 906</button>` : ''}${l.status === 'SENT' ? `<button class="btn bad" data-act="cancelSent" data-id="${l.id}">سحب الطلب</button>` : ''}${l.status === 'RETURNED' && S.isAdmin ? `<button class="btn ghost" data-act="resubmit" data-id="${l.id}">إعادة الإرسال</button>` : ''}${canCancel ? `<button class="btn bad" data-act="cancel" data-id="${l.id}">إلغاء</button>` : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">لا توجد عطل مسجلة لهذا العون.</td></tr>';
 }
 function readForm() {
