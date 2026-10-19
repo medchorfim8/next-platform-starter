@@ -6,6 +6,7 @@
 <title>عطلتي — البريد التونسي</title>
 <meta name="description" content="متابعة رصيد العطل وطلب عطلة لأعوان إدارة العمل الاجتماعي والثقافي">
 <meta name="theme-color" content="#181d54">
+<meta name="format-detection" content="telephone=no, email=no, address=no, date=no">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -69,6 +70,9 @@ input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px sol
 .item:last-child { border-bottom: 0; }
 .item .t { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-weight: 600; }
 .item .d { color: var(--muted); font-size: .9rem; }
+.who-link { background: none; border: 0; padding: 0; font: inherit; color: var(--navy, #181d54); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: start; }
+.rep-kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: .92rem; }
+.rep-kv b { text-align: left; }
 .pill { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
 .p-PENDING_MANAGER, .p-PENDING_HR { background: var(--warn-soft); color: var(--warn); }
 .p-APPROVED { background: var(--ok-soft); color: var(--ok); }
@@ -198,6 +202,11 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
     <button data-p="pApprovals" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>الموافقات <span id="apCount"></span></button>
     <button data-p="pStaff" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2-1.5-4-4-4.6"/></svg>الأعوان</button>
   </nav>
+</div>
+
+<!-- تقرير عون -->
+<div class="sheet-bg" id="repSheet" hidden>
+  <div class="sheet" id="repBody" role="dialog" aria-modal="true" aria-label="تقرير العون"></div>
 </div>
 
 <!-- نافذة طلب عطلة -->

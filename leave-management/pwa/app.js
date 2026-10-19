@@ -298,45 +298,58 @@ ${row('رأي الرئيس المباشر', 'Avis du chef Immédiat', avis)}${ro
 <span>(2) Ecrire la nature du congé (repos ou exceptionnel)</span><span class="ar">(2) ذكر نوعية العطلة (إستراحة أو إستثنائية)</span>
 <span>(3) Indiquer l'année à laquelle se rapporte le congé</span><span class="ar">(3) ذكر سنة إستحقاق عطلة الإستراحة</span></div></div></body></html>`;
 }
+// تحويل وثيقة HTML (عرض 794px) إلى PDF بصفحات A4، ثم مشاركتها أو تنزيلها
+async function htmlToPdf(html, name, title) {
+  pdfLibs ||= Promise.all(PDF_LIBS.map(loadScript)).catch((err) => { pdfLibs = null; throw err; });
+  await pdfLibs;
+  const fr = document.createElement('iframe');
+  fr.setAttribute('aria-hidden', 'true');
+  fr.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;border:0;';
+  const loaded = new Promise((r) => (fr.onload = r));
+  fr.srcdoc = html;
+  document.body.appendChild(fr);
+  try {
+    await loaded;
+    const doc = fr.contentDocument;
+    try { await doc.fonts.ready; } catch {}
+    await Promise.all([...doc.images].map((im) => im.complete ? 0 : new Promise((r) => (im.onload = im.onerror = r))));
+    const opts = { scale: 2, backgroundColor: '#ffffff', width: 794, windowWidth: 794, height: doc.body.scrollHeight, logging: false, useCORS: true };
+    let canvas;
+    try { canvas = await window.html2canvas(doc.body, { ...opts, foreignObjectRendering: true }); canvas.toDataURL('image/jpeg', 0.5); }
+    catch { canvas = await window.html2canvas(doc.body, opts); }
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+    const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+    const pagePx = Math.floor(canvas.width * ph / pw);
+    if (canvas.height <= pagePx * 1.02) {
+      let w = pw, h = canvas.height * pw / canvas.width; if (h > ph) { h = ph; w = canvas.width * ph / canvas.height; }
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (pw - w) / 2, 0, w, h);
+    } else {
+      for (let y = 0, first = true; y < canvas.height; y += pagePx, first = false) {
+        const part = document.createElement('canvas'); part.width = canvas.width; part.height = Math.min(pagePx, canvas.height - y);
+        const ctx = part.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, part.width, part.height); ctx.drawImage(canvas, 0, -y);
+        if (!first) pdf.addPage();
+        pdf.addImage(part.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pw, part.height * pw / part.width);
+      }
+    }
+    const file = new File([pdf.output('blob')], name, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title }); return; } catch (err) { if (err.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(file), link = document.createElement('a');
+    link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } finally { fr.remove(); }
+}
 async function pdf906(l, btn) {
   const e = l.matricule === S.me.matricule ? S.me : (S.emps.find((x) => x.matricule === l.matricule) || { name: l.matricule });
   await run(btn, async () => {
-    pdfLibs ||= Promise.all(PDF_LIBS.map(loadScript)).catch((err) => { pdfLibs = null; throw err; });
-    await pdfLibs;
-    const fr = document.createElement('iframe');
-    fr.setAttribute('aria-hidden', 'true');
-    fr.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;border:0;';
-    const loaded = new Promise((r) => (fr.onload = r));
     let titreYears = '';
     if (l.type === 'ANNUAL') {
       const [ls, rows] = await Promise.all([API.leaves(l.matricule), API.balanceRows(l.matricule)]);
       const a = annualBuckets(ls, rows, +l.start_date.slice(0, 4)).alloc[l.id] || [];
       titreYears = a.map((x) => a.length > 1 ? `${x.year} (${fmt(x.days)} ي)` : String(x.year)).join(' و ');
     }
-    fr.srcdoc = html906(l, e, await getLogo(), titreYears);
-    document.body.appendChild(fr);
-    try {
-      await loaded;
-      const doc = fr.contentDocument;
-      try { await doc.fonts.ready; } catch {}
-      await Promise.all([...doc.images].map((im) => im.complete ? 0 : new Promise((r) => (im.onload = im.onerror = r))));
-      const opts = { scale: 2, backgroundColor: '#ffffff', width: 794, windowWidth: 794, logging: false, useCORS: true };
-      let canvas;
-      try { canvas = await window.html2canvas(doc.body, { ...opts, foreignObjectRendering: true }); canvas.toDataURL('image/jpeg', 0.5); }
-      catch { canvas = await window.html2canvas(doc.body, opts); }
-      const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
-      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
-      let w = pw, h = canvas.height * pw / canvas.width; if (h > ph) { h = ph; w = canvas.width * ph / canvas.height; }
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (pw - w) / 2, 0, w, h);
-      const name = `conge-906-${l.matricule}-${l.start_date}.pdf`;
-      const file = new File([pdf.output('blob')], name, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'نموذج طلب عطلة 906' }); return; } catch (err) { if (err.name === 'AbortError') return; }
-      }
-      const url = URL.createObjectURL(file), a = document.createElement('a');
-      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } finally { fr.remove(); }
+    await htmlToPdf(html906(l, e, await getLogo(), titreYears), `conge-906-${l.matricule}-${l.start_date}.pdf`, 'نموذج طلب عطلة 906');
   });
 }
 document.addEventListener('click', (ev) => {
@@ -344,6 +357,64 @@ document.addEventListener('click', (ev) => {
   const l = [...S.myLeaves, ...S.pendingList].find((x) => String(x.id) === b.dataset['906']);
   if (l) pdf906(l, b).catch(() => {});
 });
+
+// ===== تقرير عون (للرئيس المباشر والموارد البشرية) =====
+const daysTxt = (n) => `${fmt(n)} ${Number(n) === 1 ? 'يوم' : Number(n) <= 10 ? 'أيام' : 'يوماً'}`;
+async function agentReport(m) {
+  const emps = S.emps.length ? S.emps : (S.emps = await API.employees());
+  const e = emps.find((x) => x.matricule === m) || { matricule: m, name: m };
+  const [leaves, rows] = await Promise.all([API.leaves(m), API.balanceRows(m)]);
+  const bal = annualBuckets(leaves, rows, YEAR), nxt = annualBuckets(leaves, rows, YEAR + 1);
+  const lastYear = Math.max(YEAR, ...leaves.map((l) => +l.start_date.slice(0, 4)));
+  const alloc = annualBuckets(leaves, rows, lastYear).alloc;
+  const ok = leaves.filter((l) => l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR)));
+  const byType = Object.keys(TYPES).map((t) => [t, ok.filter((l) => l.type === t).reduce((s, l) => s + Number(l.days), 0)]).filter(([, n]) => n > 0);
+  return { e, leaves, bal, nxt, alloc, byType };
+}
+function reportHtml(r, logo) {
+  const { e, leaves, bal, nxt, alloc, byType } = r;
+  const tr = (l) => `<tr><td>${esc(TYPES[l.type])}${l.reason ? ` (${esc(l.reason)})` : ''}</td><td>${dmy(l.start_date)}</td><td>${dmy(l.end_date)}</td><td>${fmt(l.days)}</td><td>${l.type === 'ANNUAL' && alloc[l.id] ? allocText(alloc[l.id]) : ''}</td><td>${STATUS[l.status]}</td></tr>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap"><style>
+body{margin:0;padding:34px;width:794px;box-sizing:border-box;background:#fff;font-family:'Noto Naskh Arabic',Tahoma,Arial,sans-serif;font-size:15px;color:#111}
+.hd{display:flex;align-items:center;gap:16px;border-bottom:3px solid #f6c400;padding-bottom:10px;margin-bottom:16px}.hd img{width:90px}.hd h1{font-size:22px;margin:0;color:#181d54}
+.hd .s{color:#555;font-size:14px}table{width:100%;border-collapse:collapse;margin:8px 0 18px}th,td{border:1px solid #bbb;padding:6px 8px;text-align:right}th{background:#181d54;color:#fff}
+h2{font-size:17px;color:#181d54;margin:14px 0 6px}.ft{color:#666;font-size:12px;margin-top:20px}
+</style></head><body>
+<div class="hd">${logo ? `<img src="${logo}" alt="">` : ''}<div><h1>تقرير العطل — ${esc(e.name)}</h1><div class="s">${esc(CFG.UNIT || '')} · تاريخ التقرير ${dmy(today())}</div></div></div>
+<table><tr><th>الرقم الميكانوغرافي</th><th>الإسم واللقب</th><th>الرتبة</th><th>الصفة</th></tr><tr><td>${esc(e.matricule)}</td><td>${esc(e.name)}</td><td>${esc(e.grade || '')}</td><td>${ROLE[e.role] || ''}</td></tr></table>
+<h2>رصيد العطلة السنوية</h2>
+<table><tr>${bal.buckets.map((b) => `<th>المتبقي من ${b.year}</th>`).join('')}<th>المجموع</th><th>قيد الانتظار</th></tr>
+<tr>${bal.buckets.map((b) => `<td>${fmt(b.remaining)}</td>`).join('')}<td><b>${fmt(bal.remaining)}</b></td><td>${fmt(bal.pending)}</td></tr></table>
+<div>ابتداءً من 1 جانفي ${YEAR + 1}: ${nxt.buckets.map((b) => `${b.year} (${fmt(b.remaining)})`).join(' + ')} = <b>${fmt(nxt.remaining)}</b> يوماً.</div>
+<h2>العطل المقبولة خلال ${YEAR}</h2>
+${byType.length ? `<table><tr><th>النوع</th><th>عدد الأيام</th></tr>${byType.map(([t, n]) => `<tr><td>${esc(TYPES[t])}</td><td>${fmt(n)}</td></tr>`).join('')}</table>` : '<div>لا شيء.</div>'}
+<h2>سجل كل الطلبات</h2>
+${leaves.length ? `<table><tr><th>النوع</th><th>من</th><th>إلى</th><th>الأيام</th><th>بعنوان</th><th>الحالة</th></tr>${leaves.map(tr).join('')}</table>` : '<div>لا توجد طلبات.</div>'}
+<div class="ft">وثيقة صادرة عن تطبيقة «عطلتي» — للاستعمال الإداري الداخلي.</div></body></html>`;
+}
+async function openReport(m) {
+  const box = $('repBody');
+  box.innerHTML = '<div class="empty">جارٍ التحميل…</div>'; $('repSheet').hidden = false;
+  try {
+    const r = await agentReport(m), { e, leaves, bal, nxt, alloc, byType } = r;
+    box.innerHTML = `<h2>${esc(e.name)}</h2>
+      <div class="d">${esc(e.matricule)}${e.grade ? ` · ${esc(e.grade)}` : ''} · ${ROLE[e.role] || ''}</div>
+      <div class="hero" style="margin:12px 0"><div class="d">الرصيد السنوي المتبقي (${YEAR - 2}–${YEAR})</div><div style="font-size:1.8rem;font-weight:700">${fmt(bal.remaining)} <small>يوماً</small></div>
+        <div>${bal.buckets.map((b) => `<span class="yr${b.year === YEAR - 2 ? ' old' : ''}"><small>${b.year}</small><b>${fmt(b.remaining)}</b></span>`).join('')}</div>
+        <div class="hint">قيد الانتظار: ${fmt(bal.pending)} · ابتداءً من 1 جانفي ${YEAR + 1}: <b>${fmt(nxt.remaining)}</b> يوماً</div></div>
+      <h3>العطل المقبولة خلال ${YEAR}</h3>
+      ${byType.length ? `<div class="rep-kv">${byType.map(([t, n]) => `<span>${esc(TYPES[t])}</span><b>${daysTxt(n)}</b>`).join('')}</div>` : '<div class="empty">لا شيء.</div>'}
+      <h3>سجل الطلبات (${leaves.length})</h3>
+      ${leaves.length ? leaves.map((l) => `<div class="item"><div class="t"><span>${esc(TYPES[l.type])}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
+        <div class="d">من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${daysTxt(l.days)}${l.type === 'ANNUAL' && alloc[l.id] ? ` — بعنوان ${allocText(alloc[l.id])}` : ''}${l.reason ? ` — ${esc(l.reason)}` : ''}</div>
+        ${l.comment ? `<div class="d">التعليل: ${esc(l.comment)}</div>` : ''}</div>`).join('') : '<div class="empty">لا توجد طلبات.</div>'}
+      <div class="actions" style="margin-top:14px"><button class="btn navy" id="repPdf">تقرير PDF</button><button class="btn ghost" id="repClose">إغلاق</button></div>`;
+    $('repClose').onclick = () => ($('repSheet').hidden = true);
+    $('repPdf').onclick = () => run($('repPdf'), async () => htmlToPdf(reportHtml(r, await getLogo()), `rapport-conges-${e.matricule}-${today()}.pdf`, 'تقرير العطل')).catch(() => {});
+  } catch (err) { box.innerHTML = `<div class="err">${esc(err.message)}</div><button class="btn ghost" onclick="this.closest('.sheet-bg').hidden=true">إغلاق</button>`; }
+}
+document.addEventListener('click', (ev) => { const b = ev.target.closest('[data-rep]'); if (b) { ev.preventDefault(); openReport(b.dataset.rep); } });
+$('repSheet').addEventListener('click', (e) => { if (e.target === $('repSheet')) $('repSheet').hidden = true; });
 
 // ===== الموافقات =====
 async function loadApprovals() {
@@ -359,7 +430,7 @@ async function loadApprovals() {
     bals[l.id] = { remaining: r.remaining, alloc: r.alloc[l.id] };
   }
   $('apList').innerHTML = mine.length ? mine.map((l) => `<div class="item">
-      <div class="t"><span>${esc(name(l.matricule))}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
+      <div class="t"><button class="who-link" data-rep="${esc(l.matricule)}">${esc(name(l.matricule))}</button><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
       <div class="d">${esc(TYPES[l.type])}${l.reason ? ` (${esc(l.reason)})` : ''} — من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} أيام</div>
       ${bals[l.id] ? `<div class="d">تُخصم من: ${allocText(bals[l.id].alloc)} — يبقى له ${fmt(bals[l.id].remaining)} يوماً</div>` : ''}
       ${l.note ? `<div class="d">ملاحظة: ${esc(l.note)}</div>` : ''}
@@ -379,13 +450,14 @@ document.addEventListener('click', (ev) => {
 async function loadStaff() {
   $('yearLbl2').textContent = YEAR;
   const [emps, bals, leaves] = await Promise.all([API.employees(), API.allBalances(), API.leaves()]);
+  S.emps = emps;
   const years = [YEAR - 2, YEAR - 1, YEAR];
   $('empList').innerHTML = emps.map((e) => {
     const rows = bals.filter((x) => x.matricule === e.matricule);
     const r = annualBuckets(leaves.filter((l) => l.matricule === e.matricule), rows, YEAR);
     const op = (y) => { const x = rows.find((b) => +b.year === y); return x ? Number(x.opening) : 30; };
     return `<div class="item">
-      <div class="t"><span>${esc(e.name)} <span class="d">· ${esc(e.matricule)}</span></span><span class="pill p-RETURNED">${ROLE[e.role]}</span></div>
+      <div class="t"><span><button class="who-link" data-rep="${esc(e.matricule)}">${esc(e.name)}</button> <span class="d">· ${esc(e.matricule)}</span></span><span class="pill p-RETURNED">${ROLE[e.role]}</span></div>
       <div class="d">الدخول: الرقم الميكانوغرافي <b>${esc(e.matricule)}</b> + رقم سري</div>
       <div class="d">الرصيد المتبقي: <b>${fmt(r.remaining)}</b> يوماً (${r.buckets.map((b) => `${fmt(b.remaining)} من ${b.year}`).join('، ')})</div>
       <div class="three">${years.map((y) => `<label>متاح ${y}<input type="number" step="0.5" min="0" max="30" value="${op(y)}" id="bo_${esc(e.matricule)}_${y}"></label>`).join('')}</div>
