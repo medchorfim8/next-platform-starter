@@ -215,8 +215,8 @@ table.sheet tr.leave td { background: var(--accent-soft); }
   <section data-pane="settings" hidden class="grid2">
     <div class="panel">
       <h2>الأرصدة السنوية</h2>
-      <p class="note">المستحق 30 يوماً افتراضياً. أدخل المرحّل من السنة الماضية، أو عدّل المستحق لمن لم يباشر كامل السنة (2,5 يوم عن كل شهر).</p>
-      <div class="scroll"><table><thead><tr><th>العون</th><th>المستحق</th><th>المرحّل</th><th></th></tr></thead><tbody id="balBody"></tbody></table></div>
+      <p class="note">لكل سنة 30 يوماً، والرصيد يشمل السنة المختارة والسنتين قبلها، ويُخصم من الأقدم. أدخل لكل سنة ما بقي منها فعلاً قبل بدء العمل بالتطبيقة (30 إن لم يُستهلك منها شيء).</p>
+      <div class="scroll"><table><thead><tr><th>العون</th><th id="bh0">متاح</th><th id="bh1">متاح</th><th id="bh2">متاح</th><th>المتبقي</th><th></th></tr></thead><tbody id="balBody"></tbody></table></div>
     </div>
     <div class="panel">
       <h2>فترات الحصة الواحدة</h2>
@@ -292,15 +292,36 @@ function overlapDays(l, from, to) { // أيام تقويمية للعطلة دا
 const empName = (m) => S.employees.find((e) => e.matricule === m)?.name || m;
 const leavesOf = (m) => S.leaves.filter((l) => l.matricule === m);
 
-function balanceOf(m, year) {
-  const b = S.balances[`${m}_${year}`] || {};
-  const entitled = b.entitled ?? 30, carried = b.carried ?? 0;
-  const y0 = `${year}-01-01`, y1 = `${year}-12-31`;
-  const ann = leavesOf(m).filter((l) => l.type === 'ANNUAL' && l.start <= y1 && l.end >= y0);
-  const used = ann.filter((l) => l.status === 'APPROVED').reduce((s, l) => s + l.days, 0);
-  const pending = ann.filter((l) => ['SENT', 'PENDING_MANAGER', 'PENDING_HR'].includes(l.status)).reduce((s, l) => s + l.days, 0);
-  return { entitled, carried, used, pending, remaining: entitled + carried - used - pending };
+// الرصيد: 30 يوماً لكل سنة، والمتاح = السنة الحالية + السنتان الماضيتان.
+// العطلة السنوية تُخصم من أقدم سنة أولاً، وعند دخول سنة جديدة يسقط ما بقي من السنة الخارجة من النافذة.
+function openingOf(m, y) {
+  const d = S.balances[`${m}_${y}`];
+  if (d && d.opening != null) return Number(d.opening);
+  const next = S.balances[`${m}_${y + 1}`];
+  if (next && next.carried != null && next.opening == null) return Number(next.carried); // صيغة قديمة: «المرحّل» = ما بقي من السنة السابقة
+  return 30;
 }
+function balanceOf(m, year) {
+  const ann = leavesOf(m).filter((l) => l.type === 'ANNUAL' && ['SENT', 'PENDING_MANAGER', 'PENDING_HR', 'APPROVED'].includes(l.status) && +l.start.slice(0, 4) <= year)
+    .sort((a, b) => (a.start + (a.createdAt || '')).localeCompare(b.start + (b.createdAt || '')));
+  const used = {}, alloc = {};
+  for (const l of ann) {
+    const k = +l.start.slice(0, 4); let need = Number(l.days); alloc[l.id] = [];
+    for (let y = k - 2; y <= k && need > 0; y++) {
+      const t = Math.min(need, Math.max(openingOf(m, y) - (used[y] || 0), 0));
+      if (t > 0) { used[y] = (used[y] || 0) + t; need -= t; alloc[l.id].push({ year: y, days: t }); }
+    }
+    if (need > 0) { used[k] = (used[k] || 0) + need; alloc[l.id].push({ year: k, days: need }); }
+  }
+  const buckets = [year - 2, year - 1, year].map((y) => ({ year: y, opening: openingOf(m, y), remaining: openingOf(m, y) - (used[y] || 0) }));
+  const inWin = ann.filter((l) => +l.start.slice(0, 4) >= year - 2);
+  const pending = inWin.filter((l) => l.status !== 'APPROVED').reduce((s, l) => s + Number(l.days), 0);
+  const usedApproved = ann.filter((l) => l.status === 'APPROVED' && l.start.startsWith(String(year))).reduce((s, l) => s + Number(l.days), 0);
+  const entitled = buckets.reduce((s, b) => s + b.opening, 0), remaining = buckets.reduce((s, b) => s + b.remaining, 0);
+  return { entitled, carried: 0, used: usedApproved, pending, remaining, buckets, alloc };
+}
+const bucketsText = (b) => b.buckets.map((x) => `${fmt(x.remaining)} من ${x.year}`).join('، ');
+const allocText = (a) => (a || []).map((x) => `${x.year} (${fmt(x.days)})`).join(' + ');
 // توزيع أيام المرض على شرائح الأجر حسب نافذة 365 يوماً قبل بداية العطلة
 function sickSplit(m, leave) {
   const from = iso(new Date(D(leave.start).getTime() - 365 * DAY));
@@ -395,7 +416,7 @@ function renderAgent() {
   const sumType = (t) => approved.filter((l) => l.type === t).reduce((s, l) => s + overlapDays(l, y0, y1), 0);
   const sickWin = approved.filter((l) => l.type === 'SICK').reduce((s, l) => s + overlapDays(l, iso(new Date(D(today()).getTime() - 364 * DAY)), today()), 0);
   $('balanceCards').innerHTML = [
-    ['الرصيد السنوي المتبقي', fmt(b.remaining), `${fmt(b.entitled)} مستحق + ${fmt(b.carried)} مرحّل − ${fmt(b.used)} مستهلك − ${fmt(b.pending)} قيد الانتظار`],
+    ['الرصيد السنوي المتبقي', fmt(b.remaining), `${bucketsText(b)} — يُخصم من الأقدم، ويسقط ما بقي من ${S.year - 2} في 1 جانفي ${S.year + 1}`],
     ['مرض خلال 365 يوماً', fmt(sickWin), sickWin <= SICK_FULL ? `${fmt(SICK_FULL - sickWin)} يوماً متبقية بكامل الأجر` : 'تجاوز الشهرين: نصف الأجر'],
     ['عطل استثنائية', `${fmt(sumType('EXCEPTIONAL'))} / ${TYPES.EXCEPTIONAL.perYear}`, 'خلال السنة'],
     ['بدون أجر', fmt(sumType('UNPAID')), 'يوماً خلال السنة'],
@@ -418,11 +439,11 @@ function renderForm() {
   const req = readForm();
   $('lfReasonWrap').hidden = req.type !== 'EXCEPTIONAL';
   $('lfExtWrap').hidden = req.type !== 'MATERNITY';
-  $('lfYearWrap').hidden = req.type !== 'ANNUAL';
+  $('lfYearWrap').hidden = true; // سنة الاستحقاق تُحدَّد آلياً (الخصم من الأقدم)
   if (!req.start || !req.end) { $('lfSim').textContent = 'اختر النوع والتواريخ لعرض الأيام المحتسبة.'; $('lfErrors').innerHTML = ''; return; }
   const { errs, days } = validate(req);
   const p = days > 0 ? paySplit({ ...req, days, id: '_new' }) : null;
-  $('lfSim').textContent = days > 0 ? `${fmt(days)} يوماً محتسباً (${TYPES[req.type].mode === 'WORKING' ? 'أيام عمل' : 'أيام تقويمية'}) — ${payText(p)}${req.type === 'ANNUAL' ? ` — الرصيد بعد الطلب: ${fmt(balanceOf(req.matricule, +req.start.slice(0, 4)).remaining - days)}` : ''}` : '—';
+  $('lfSim').textContent = days > 0 ? `${fmt(days)} يوماً محتسباً (${TYPES[req.type].mode === 'WORKING' ? 'أيام عمل' : 'أيام تقويمية'}) — ${payText(p)}${req.type === 'ANNUAL' ? ` — الرصيد بعد الطلب: ${fmt(balanceOf(req.matricule, +req.start.slice(0, 4)).remaining - days)} (يُخصم من الأقدم)` : ''}` : '—';
   $('lfErrors').innerHTML = errs.map((e) => `<li>${esc(e)}</li>`).join('');
   $('lfSubmit').disabled = errs.some((e) => !e.includes('استثنائياً')) || !S.db || !S.canWrite;
 }
@@ -498,9 +519,11 @@ function renderReports() {
   $('payBody').innerHTML = keys.map((k) => { const [mo, m] = k.split('|'), v = month[k]; return `<tr><td>${MONTHS[+mo.slice(5) - 1]} ${mo.slice(0, 4)}</td><td>${esc(m)}</td><td>${esc(empName(m))}</td><td>${fmt(v.none)}</td><td>${fmt(v.half)}</td><td><b>${fmt(v.none + v.half / 2)}</b></td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">لا توجد أيام بدون أجر أو بنصف الأجر هذه السنة.</td></tr>';
 }
 function renderSettings() {
+  [0, 1, 2].forEach((i) => { const h = $(`bh${i}`); if (h) h.textContent = `متاح ${S.year - 2 + i}`; });
   $('balBody').innerHTML = S.employees.map((e) => {
     const b = S.balances[`${e.matricule}_${S.year}`] || {};
-    return `<tr><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div></td><td><input type="number" step="0.5" min="0" id="be_${esc(e.matricule)}" value="${b.entitled ?? 30}" style="width:80px"></td><td><input type="number" step="0.5" min="0" max="${CARRY_MAX}" id="bc_${esc(e.matricule)}" value="${b.carried ?? 0}" style="width:80px"></td><td><button class="btn ghost" data-act="saveBal" data-m="${esc(e.matricule)}">حفظ</button></td></tr>`;
+    const yrs = [S.year - 2, S.year - 1, S.year], bb = balanceOf(e.matricule, S.year);
+    return `<tr><td>${esc(e.name)}<div class="note">${esc(e.matricule)}</div></td>${yrs.map((y) => `<td><input type="number" step="0.5" min="0" max="30" id="bo_${esc(e.matricule)}_${y}" value="${openingOf(e.matricule, y)}" style="width:70px" aria-label="متاح ${y}"></td>`).join('')}<td><b>${fmt(bb.remaining)}</b></td><td><button class="btn ghost" data-act="saveBal" data-m="${esc(e.matricule)}">حفظ</button></td></tr>`;
   }).join('') || '<tr><td colspan="4" class="empty">لا يوجد أعوان بعد.</td></tr>';
   $('periodList').innerHTML = (S.settings.periods || []).map((p, i) => `<div class="row" style="align-items:center">${esc(p.label || 'حصة واحدة')}: ${dmy(p.from)} ← ${dmy(p.to)} <button class="btn bad" data-act="delPeriod" data-i="${i}">حذف</button></div>`).join('') || '<p class="note">لا توجد فترات.</p>';
   $('holList').innerHTML = (S.settings.holidays || []).slice().sort((a, b) => a.day.localeCompare(b.day)).map((h) => `<div class="row" style="align-items:center">${dmy(h.day)} — ${esc(h.label)} <button class="btn bad" data-act="delHol" data-day="${h.day}">حذف</button></div>`).join('') || '<p class="note">لا توجد عطل رسمية.</p>';
@@ -597,8 +620,8 @@ document.addEventListener('click', (ev) => {
   if (act === 'pmApprove' || act === 'pmReject') write((db) => db.doc(`permits/${id}`).update({ status: act === 'pmApprove' ? 'APPROVED' : 'REJECTED', decidedAt: new Date().toISOString() }), act === 'pmApprove' ? 'سُجّلت الموافقة وأُدرجت الرخصة في بطاقة الحضور.' : 'سُجّل الرفض.');
   if (act === 'pmPrint') printPermit(S.permits.find((x) => x.id === id));
   if (act === 'saveBal') {
-    const m = b.dataset.m, entitled = +$(`be_${m}`).value, carried = Math.min(CARRY_MAX, +$(`bc_${m}`).value);
-    write((db) => db.doc(`balances/${m}_${S.year}`).set({ matricule: m, year: S.year, entitled, carried }), 'حُفظ الرصيد.');
+    const m = b.dataset.m;
+    write(async (db) => { for (const y of [S.year - 2, S.year - 1, S.year]) await db.doc(`balances/${m}_${y}`).set({ matricule: m, year: y, opening: Math.min(30, Math.max(0, +$(`bo_${m}_${y}`).value)) }); }, 'حُفظ الرصيد.');
   }
   if (act === 'delPeriod') { const periods = S.settings.periods.filter((_, i) => i !== +b.dataset.i); write((db) => db.doc('public/settings').update({ periods }), 'حُذفت الفترة.'); }
   if (act === 'delHol') { const holidays = S.settings.holidays.filter((h) => h.day !== b.dataset.day); write((db) => db.doc('public/settings').update({ holidays }), 'حُذفت العطلة.'); }
@@ -624,7 +647,8 @@ function print906(l) {
   const e = S.employees.find((x) => x.matricule === l.matricule) || { name: empName(l.matricule) };
   const isAnn = l.type === 'ANNUAL';
   const nature = isAnn ? 'عطلة استراحة' : `عطلة استثنائية${l.reason ? ` (${REASONS[l.reason][0]})` : ''}`;
-  const titre = isAnn ? String(l.titleYear || l.start.slice(0, 4)) : (l.reason ? REASONS[l.reason][0] : '');
+  const al = isAnn ? (balanceOf(l.matricule, +l.start.slice(0, 4)).alloc[l.id] || []) : [];
+  const titre = isAnn ? (al.map((x) => al.length > 1 ? `${x.year} (${fmt(x.days)} ي)` : String(x.year)).join(' و ') || l.start.slice(0, 4)) : (l.reason ? REASONS[l.reason][0] : '');
   const dur = `${fmt(l.days)} ${l.days === 1 ? 'يوم' : l.days <= 10 ? 'أيام' : 'يوماً'}`;
   const mgr = (l.log || []).find((x) => x.from === 'PENDING_MANAGER');
   const avis = mgr ? (mgr.to === 'REJECTED' ? 'غير موافق' : mgr.to === 'RETURNED' ? 'مُرجع للتعديل' : 'موافق') + (mgr.comment ? ` — ${mgr.comment}` : '') : '';
@@ -751,7 +775,7 @@ function printStatement(m, year) {
 <h1>كشف رصيد العطل لسنة ${year}</h1>
 <div class="sub">${esc(e.name)} — الرقم الآلي: ${esc(m)}${e.grade ? ` — الرتبة: ${esc(e.grade)}` : ''}</div>
 <h2>العطلة السنوية للاستراحة</h2>
-<table class="kv">${kv('المستحق لسنة ' + year, fmt(b.entitled))}${kv('المرحّل من السنة السابقة', fmt(b.carried))}${kv('المستهلك', fmt(b.used))}${kv('قيد الانتظار', fmt(b.pending))}${kv('<span class="big">الرصيد المتبقي</span>', `<span class="big">${fmt(b.remaining)} يوماً</span>`)}</table>
+<table class="kv">${b.buckets.map((x) => kv('المتبقي من سنة ' + x.year, fmt(x.remaining))).join('')}${kv('المستهلك خلال ' + year, fmt(b.used))}${kv('قيد الانتظار', fmt(b.pending))}${kv('<span class="big">الرصيد المتبقي</span>', `<span class="big">${fmt(b.remaining)} يوماً</span>`)}</table>
 <h2>العطل الأخرى خلال السنة</h2>
 <table class="kv">${kv('مرض بكامل الأجر / بنصف الأجر', `${fmt(sick.full)} / ${fmt(sick.half)}`)}${kv('عطل استثنائية', `${fmt(sum('EXCEPTIONAL'))} من ${TYPES.EXCEPTIONAL.perYear}`)}${kv('عطل بدون أجر', fmt(sum('UNPAID')))}${kv('رخص خروج مقبولة', permits)}${kv('غيابات غير مبررة', fmt(S.absences?.[m] || 0))}</table>
 <h2>تفصيل العطل</h2>
