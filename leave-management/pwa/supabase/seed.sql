@@ -16,8 +16,11 @@ insert into employees (matricule, name, grade, email, role, sort) values
   ('65705',  'ليليا توايتي',         null,               null,            'agent',   8)  -- الرتبة: تُكمَّل يدوياً
 on conflict (matricule) do update set name = excluded.name, grade = coalesce(excluded.grade, employees.grade), role = excluded.role, sort = excluded.sort;
 
-insert into balances (matricule, year, entitled, carried)
-select matricule, 2026, 30, 0 from employees where role <> 'hr'
+-- الأرصدة: لكل عون ثلاث سنوات (2024، 2025، 2026). الافتراضي 30 يوماً متاحة لكل سنة.
+-- عدّل «opening» إلى ما بقي فعلاً لكل عون من كل سنة قبل بدء العمل بالتطبيقة
+-- (مثال: بقي له 12 يوماً من 2024 ← opening = 12). يمكن أيضاً تعديلها لاحقاً من تبويب «الأعوان».
+insert into balances (matricule, year, opening)
+select e.matricule, y, 30 from employees e cross join generate_series(2024, 2026) y where e.role <> 'hr'
 on conflict do nothing;
 
 insert into holidays (day, label) values

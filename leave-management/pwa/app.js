@@ -26,6 +26,28 @@ function countDays(type, a, b, holidays) {
   return n;
 }
 
+// ===== الرصيد: 3 سنوات × 30 يوماً، الخصم من الأقدم، وسقوط السنة الخارجة من النافذة =====
+// (نفس منطق الدالة annual_buckets في قاعدة البيانات؛ الخادم هو الذي يفرض القاعدة عند تسجيل الطلب)
+const ACTIVE = ['PENDING_MANAGER', 'PENDING_HR', 'APPROVED'];
+function annualBuckets(leaves, rows, Y) {
+  const open = (y) => { const r = rows.find((b) => +b.year === y); return r ? Number(r.opening) : 30; };
+  const ann = leaves.filter((l) => l.type === 'ANNUAL' && ACTIVE.includes(l.status) && +l.start_date.slice(0, 4) <= Y)
+    .sort((a, b) => (a.start_date + (a.created_at || '')).localeCompare(b.start_date + (b.created_at || '')));
+  const used = {}, alloc = {};
+  for (const l of ann) {
+    const k = +l.start_date.slice(0, 4); let need = Number(l.days); alloc[l.id] = [];
+    for (let y = k - 2; y <= k && need > 0; y++) {
+      const t = Math.min(need, Math.max(open(y) - (used[y] || 0), 0));
+      if (t > 0) { used[y] = (used[y] || 0) + t; need -= t; alloc[l.id].push({ year: y, days: t }); }
+    }
+    if (need > 0) { used[k] = (used[k] || 0) + need; alloc[l.id].push({ year: k, days: need }); }
+  }
+  const buckets = [Y - 2, Y - 1, Y].map((y) => ({ year: y, opening: open(y), used: used[y] || 0, remaining: open(y) - (used[y] || 0) }));
+  const pending = ann.filter((l) => l.status !== 'APPROVED' && +l.start_date.slice(0, 4) >= Y - 2).reduce((s, l) => s + Number(l.days), 0);
+  return { buckets, remaining: buckets.reduce((s, b) => s + b.remaining, 0), pending, alloc };
+}
+const allocText = (a) => (a || []).map((x) => `${x.year} (${fmt(x.days)})`).join(' + ');
+
 // ===== طبقة المعطيات: Supabase أو وضع تجريبي =====
 function supabaseApi() {
   const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
@@ -37,7 +59,7 @@ function supabaseApi() {
     async verify(email, token) { ok(await sb.auth.verifyOtp({ email, token, type: 'email' })); },
     async logout() { await sb.auth.signOut(); },
     async me(email) { return (ok(await sb.from('employees').select('*').ilike('email', email)) || [])[0] || null; },
-    async balance(m, y) { return (ok(await sb.rpc('balance_of', { p_matricule: m, p_year: y })) || [])[0] || null; },
+    async balanceRows(m) { return ok(await sb.from('balances').select('*').eq('matricule', m)); },
     async leaves(m) { let q = sb.from('leaves').select('*').order('start_date', { ascending: false }); if (m) q = q.eq('matricule', m); return ok(await q); },
     async pending() { return ok(await sb.from('leaves').select('*').in('status', ['PENDING_MANAGER', 'PENDING_HR']).order('start_date')); },
     async holidays() { return ok(await sb.from('holidays').select('*')); },
@@ -45,15 +67,15 @@ function supabaseApi() {
     async cancel(id) { ok(await sb.rpc('cancel_my_leave', { p_id: id })); },
     async decide(id, action, comment) { return ok(await sb.rpc('decide_leave', { p_id: id, p_action: action, p_comment: comment || null })); },
     async employees() { return ok(await sb.from('employees').select('*').order('sort')); },
-    async balances(y) { return ok(await sb.from('balances').select('*').eq('year', y)); },
-    async saveBalance(m, y, entitled, carried) { ok(await sb.from('balances').upsert({ matricule: m, year: y, entitled, carried })); },
-    async addEmployee(e) { ok(await sb.from('employees').insert(e)); ok(await sb.from('balances').upsert({ matricule: e.matricule, year: YEAR, entitled: 30, carried: 0 })); },
+    async allBalances() { return ok(await sb.from('balances').select('*')); },
+    async saveBalance(m, y, opening) { ok(await sb.from('balances').upsert({ matricule: m, year: y, opening })); },
+    async addEmployee(e) { ok(await sb.from('employees').insert(e)); },
     async updateEmployee(m, patch) { ok(await sb.from('employees').update(patch).eq('matricule', m)); },
   };
 }
 
 function demoApi() {
-  const KEY = 'demo-conges-v4';
+  const KEY = 'demo-conges-v5';
   const seed = () => ({
     employees: [
       { matricule: 'RH-001', name: 'الموارد البشرية', email: 'rh@demo.tn', role: 'hr', sort: 0 },
@@ -61,7 +83,7 @@ function demoApi() {
       { matricule: '10002', name: 'كريم الهمامي', email: 'agent@demo.tn', role: 'agent', sort: 2, grade: 'متصرّف' },
       { matricule: '10003', name: 'ريم الشابي', email: 'reem@demo.tn', role: 'agent', sort: 3, grade: 'متصرّف رئيس' },
     ],
-    balances: [{ matricule: '10001', year: YEAR, entitled: 30, carried: 2 }, { matricule: '10002', year: YEAR, entitled: 30, carried: 6 }, { matricule: '10003', year: YEAR, entitled: 30, carried: 0 }],
+    balances: [{ matricule: '10002', year: YEAR - 2, opening: 12 }, { matricule: '10001', year: YEAR - 2, opening: 5 }, { matricule: '10003', year: YEAR - 2, opening: 0 }],
     leaves: [
       { id: 'd1', matricule: '10002', type: 'ANNUAL', start_date: `${YEAR}-08-03`, end_date: `${YEAR}-08-12`, days: 10, status: 'APPROVED', log: [] },
       { id: 'd3', matricule: '10002', type: 'SICK', start_date: `${YEAR}-03-02`, end_date: `${YEAR}-03-04`, days: 3, status: 'APPROVED', log: [] },
@@ -75,13 +97,7 @@ function demoApi() {
   let db; try { db = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch { db = seed(); }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
   const me = () => db.employees.find((e) => e.email === db.session);
-  const bal = (m, y) => {
-    const b = db.balances.find((x) => x.matricule === m && x.year === y) || { entitled: 30, carried: 0 };
-    const a = db.leaves.filter((l) => l.matricule === m && l.type === 'ANNUAL' && l.start_date.startsWith(String(y)));
-    const used = a.filter((l) => l.status === 'APPROVED').reduce((s, l) => s + l.days, 0);
-    const pending = a.filter((l) => l.status.startsWith('PENDING')).reduce((s, l) => s + l.days, 0);
-    return { entitled: b.entitled, carried: b.carried, used, pending, remaining: b.entitled + b.carried - used - pending };
-  };
+  const bal = (m, y) => annualBuckets(db.leaves.filter((l) => l.matricule === m), db.balances.filter((b) => b.matricule === m), y);
   return {
     demo: true,
     async session() { return db.session; },
@@ -89,7 +105,7 @@ function demoApi() {
     async verify(email) { db.session = email; save(); },
     async logout() { db.session = null; save(); },
     async me() { return me() || null; },
-    async balance(m, y) { return bal(m, y); },
+    async balanceRows(m) { return db.balances.filter((b) => b.matricule === m); },
     async leaves(m) { return db.leaves.filter((l) => !m || l.matricule === m).sort((a, b) => b.start_date.localeCompare(a.start_date)); },
     async pending() { return db.leaves.filter((l) => l.status.startsWith('PENDING')); },
     async holidays() { return db.holidays; },
@@ -111,9 +127,9 @@ function demoApi() {
       l.status = n; l.comment = comment; save(); return n;
     },
     async employees() { return [...db.employees].sort((a, b) => a.sort - b.sort); },
-    async balances(y) { return db.balances.filter((b) => b.year === y); },
-    async saveBalance(m, y, entitled, carried) { const b = db.balances.find((x) => x.matricule === m && x.year === y); if (b) Object.assign(b, { entitled, carried }); else db.balances.push({ matricule: m, year: y, entitled, carried }); save(); },
-    async addEmployee(e) { db.employees.push({ ...e, sort: 99 }); db.balances.push({ matricule: e.matricule, year: YEAR, entitled: 30, carried: 0 }); save(); },
+    async allBalances() { return db.balances; },
+    async saveBalance(m, y, opening) { const b = db.balances.find((x) => x.matricule === m && x.year === y); if (b) b.opening = opening; else db.balances.push({ matricule: m, year: y, opening }); save(); },
+    async addEmployee(e) { db.employees.push({ ...e, sort: 99 }); save(); },
     async updateEmployee(m, patch) { Object.assign(db.employees.find((e) => e.matricule === m), patch); save(); },
   };
 }
@@ -157,17 +173,22 @@ $('logout').onclick = async () => { await API.logout(); location.reload(); };
 // ===== الصفحة الرئيسية للعون =====
 async function loadMine() {
   const m = S.me.matricule;
-  const [bal, leaves] = await Promise.all([API.balance(m, YEAR), API.leaves(m)]);
-  S.balance = bal; S.myLeaves = leaves;
-  $('yearLbl').textContent = YEAR;
-  $('remaining').textContent = bal ? fmt(bal.remaining) : '—';
-  $('balDetail').textContent = bal ? `${fmt(bal.entitled)} مستحق + ${fmt(bal.carried)} مرحّل من السنة الماضية` : '';
-  $('stUsed').textContent = bal ? fmt(bal.used) : '—';
-  $('stPending').textContent = bal ? fmt(bal.pending) : '—';
+  const [rows, leaves] = await Promise.all([API.balanceRows(m), API.leaves(m)]);
+  const bal = annualBuckets(leaves, rows, YEAR);
+  const lastYear = Math.max(YEAR, ...leaves.map((l) => +l.start_date.slice(0, 4)));
+  const allocAll = annualBuckets(leaves, rows, lastYear).alloc;
+  S.balance = bal; S.balRows = rows; S.myLeaves = leaves;
+  $('yearLbl').textContent = `${YEAR - 2}–${YEAR}`;
+  $('remaining').textContent = fmt(bal.remaining);
+  $('balDetail').innerHTML = bal.buckets.map((b) => `<span class="yr${b.year === YEAR - 2 ? ' old' : ''}"><small>${b.year}</small><b>${fmt(b.remaining)}</b></span>`).join('') +
+    `<div class="hint">يُخصم من أقدم سنة أولاً. ما يبقى من ${YEAR - 2} يسقط في 1 جانفي ${YEAR + 1}.</div>`;
+  $('stUsed').textContent = fmt(leaves.filter((l) => l.type === 'ANNUAL' && l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR))).reduce((s, l) => s + Number(l.days), 0));
+  $('stPending').textContent = fmt(bal.pending);
   $('stSick').textContent = fmt(leaves.filter((l) => l.type === 'SICK' && l.status === 'APPROVED' && l.start_date.startsWith(String(YEAR))).reduce((s, l) => s + Number(l.days), 0));
   const item = (l) => `<div class="item">
       <div class="t"><span>${esc(TYPES[l.type])}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
       <div class="d">من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} ${Number(l.days) === 1 ? 'يوم' : Number(l.days) <= 10 ? 'أيام' : 'يوماً'}${l.reason ? ` — ${esc(l.reason)}` : ''}</div>
+      ${allocAll[l.id]?.length ? `<div class="d">مخصومة من رصيد: ${allocText(allocAll[l.id])}</div>` : ''}
       ${l.comment ? `<div class="d">التعليل: ${esc(l.comment)}</div>` : ''}
       <div class="actions">${FORM906.includes(l.type) && l.status !== 'CANCELLED' ? `<button class="btn sm ghost" data-906="${l.id}">نموذج 906 (PDF)</button>` : ''}${['PENDING_MANAGER', 'PENDING_HR', 'RETURNED'].includes(l.status) ? `<button class="btn sm bad" data-cancel="${l.id}">سحب الطلب</button>` : ''}</div>
     </div>`;
@@ -184,22 +205,26 @@ document.addEventListener('click', (ev) => {
 // ===== طلب عطلة =====
 $('fType').innerHTML = Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 $('fReason').innerHTML = Object.entries(REASONS).map(([k, d]) => `<option value="${esc(k)}" data-max="${d}">${esc(k)} (${d} ${d === 1 ? 'يوم' : 'أيام'})</option>`).join('');
-$('fYear').innerHTML = [YEAR, YEAR - 1].map((y) => `<option>${y}</option>`).join('');
-const readForm = () => ({ type: $('fType').value, start: $('fStart').value, end: $('fEnd').value, reason: $('fType').value === 'EXCEPTIONAL' ? $('fReason').value : null, titleYear: $('fType').value === 'ANNUAL' ? +$('fYear').value : null, address: $('fAddress').value.trim() || null, interim: $('fInterim').value.trim() || null, note: $('fNote').value.trim() || null });
+const readForm = () => ({ type: $('fType').value, start: $('fStart').value, end: $('fEnd').value, reason: $('fType').value === 'EXCEPTIONAL' ? $('fReason').value : null, titleYear: null, address: $('fAddress').value.trim() || null, interim: $('fInterim').value.trim() || null, note: $('fNote').value.trim() || null });
 function preview() {
   const f = readForm();
-  $('fReasonW').hidden = f.type !== 'EXCEPTIONAL'; $('fYearW').hidden = f.type !== 'ANNUAL';
+  $('fReasonW').hidden = f.type !== 'EXCEPTIONAL';
   $('fErr').textContent = '';
   if (!f.start || !f.end) { $('fPreview').textContent = 'اختر التاريخين لعرض عدد الأيام.'; return f; }
   if (f.end < f.start) { $('fPreview').textContent = 'تاريخ النهاية قبل تاريخ البداية.'; return f; }
   const days = countDays(f.type, f.start, f.end, S.holidays);
   let txt = `${fmt(days)} ${days <= 10 ? 'أيام' : 'يوماً'} ${f.type === 'EXCEPTIONAL' ? '(أيام عمل)' : ''}`;
-  if (f.type === 'ANNUAL' && S.balance) { const after = S.balance.remaining - days; txt += ` — يبقى لك بعد الطلب ${fmt(after)} يوماً`; if (after < 0) $('fErr').textContent = 'الرصيد غير كافٍ لهذا الطلب.'; }
+  if (f.type === 'ANNUAL' && S.balRows) {
+    const y = +f.start.slice(0, 4), sim = annualBuckets([...S.myLeaves, { id: '_new', type: 'ANNUAL', status: 'PENDING_MANAGER', start_date: f.start, days, created_at: '9' }], S.balRows, y);
+    const after = sim.remaining;
+    txt += ` — تُخصم من: ${allocText(sim.alloc._new)} — يبقى لك ${fmt(after)} يوماً`;
+    if (after < 0) $('fErr').textContent = `الرصيد غير كافٍ: المتاح ${fmt(after + days)} يوماً (${y - 2}–${y}).`;
+  }
   if (f.type === 'EXCEPTIONAL') { const max = +$('fReason').selectedOptions[0].dataset.max; if (days > max) $('fErr').textContent = `المدة المسموح بها لهذا السبب ${max} ${max === 1 ? 'يوم' : 'أيام'}.`; }
   $('fPreview').textContent = txt;
   return f;
 }
-['fType', 'fStart', 'fEnd', 'fReason', 'fYear'].forEach((id) => $(id).addEventListener('input', preview));
+['fType', 'fStart', 'fEnd', 'fReason'].forEach((id) => $(id).addEventListener('input', preview));
 $('fStart').addEventListener('change', () => { if (!$('fEnd').value || $('fEnd').value < $('fStart').value) $('fEnd').value = $('fStart').value; preview(); });
 $('newLeave').onclick = () => { $('leaveForm').reset(); $('fStart').min = today(); preview(); $('sheet').hidden = false; };
 $('fCancel').onclick = () => ($('sheet').hidden = true);
@@ -220,10 +245,10 @@ const loadScript = (src) => new Promise((ok, ko) => { const el = document.create
 // الشعار يُضمَّن في الوثيقة كبيانات (data URL) حتى يظهر في ملف PDF
 let logoData = null;
 const getLogo = () => (logoData ||= fetch('icons/logo.png').then((r) => r.blob()).then((b) => new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); })).catch(() => ''));
-function html906(l, e, logo) {
+function html906(l, e, logo, titreYears) {
   const isAnn = l.type === 'ANNUAL';
   const nature = isAnn ? 'عطلة استراحة' : `عطلة استثنائية${l.reason ? ` (${l.reason})` : ''}`;
-  const titre = isAnn ? String(l.title_year || l.start_date.slice(0, 4)) : (l.reason || '');
+  const titre = isAnn ? (titreYears || String(l.start_date.slice(0, 4))) : (l.reason || '');
   const days = Number(l.days);
   const mgr = (l.log || []).find((x) => x.from === 'PENDING_MANAGER');
   const avis = mgr ? (mgr.to === 'REJECTED' ? 'غير موافق' : mgr.to === 'RETURNED' ? 'مُرجع للتعديل' : 'موافق') + (mgr.comment ? ` — ${mgr.comment}` : '') : '';
@@ -263,7 +288,13 @@ async function pdf906(l, btn) {
     fr.setAttribute('aria-hidden', 'true');
     fr.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;border:0;';
     const loaded = new Promise((r) => (fr.onload = r));
-    fr.srcdoc = html906(l, e, await getLogo());
+    let titreYears = '';
+    if (l.type === 'ANNUAL') {
+      const [ls, rows] = await Promise.all([API.leaves(l.matricule), API.balanceRows(l.matricule)]);
+      const a = annualBuckets(ls, rows, +l.start_date.slice(0, 4)).alloc[l.id] || [];
+      titreYears = a.map((x) => a.length > 1 ? `${x.year} (${fmt(x.days)} ي)` : String(x.year)).join(' و ');
+    }
+    fr.srcdoc = html906(l, e, await getLogo(), titreYears);
     document.body.appendChild(fr);
     try {
       await loaded;
@@ -303,11 +334,15 @@ async function loadApprovals() {
   const mine = list.filter((l) => S.me.role === 'hr' || l.status === 'PENDING_MANAGER');
   $('apCount').textContent = mine.length ? `(${mine.length})` : '';
   const bals = {};
-  for (const l of mine.filter((x) => x.type === 'ANNUAL')) bals[l.matricule] ||= await API.balance(l.matricule, +l.start_date.slice(0, 4));
+  for (const l of mine.filter((x) => x.type === 'ANNUAL')) {
+    const [ls, rows] = await Promise.all([API.leaves(l.matricule), API.balanceRows(l.matricule)]);
+    const r = annualBuckets(ls, rows, +l.start_date.slice(0, 4));
+    bals[l.id] = { remaining: r.remaining, alloc: r.alloc[l.id] };
+  }
   $('apList').innerHTML = mine.length ? mine.map((l) => `<div class="item">
       <div class="t"><span>${esc(name(l.matricule))}</span><span class="pill p-${l.status}">${STATUS[l.status]}</span></div>
       <div class="d">${esc(TYPES[l.type])}${l.reason ? ` (${esc(l.reason)})` : ''} — من ${dmy(l.start_date)} إلى ${dmy(l.end_date)} — ${fmt(l.days)} أيام</div>
-      ${bals[l.matricule] ? `<div class="d">رصيده الحالي: ${fmt(bals[l.matricule].remaining)} يوماً (محسوب معه هذا الطلب)</div>` : ''}
+      ${bals[l.id] ? `<div class="d">تُخصم من: ${allocText(bals[l.id].alloc)} — يبقى له ${fmt(bals[l.id].remaining)} يوماً</div>` : ''}
       ${l.note ? `<div class="d">ملاحظة: ${esc(l.note)}</div>` : ''}
       <input id="c_${l.id}" placeholder="التعليل (إجباري عند الرفض أو الإرجاع)">
       <div class="actions">${FORM906.includes(l.type) ? `<button class="btn sm ghost" data-906="${l.id}">906</button>` : ''}<button class="btn sm ok" data-dec="approve" data-id="${l.id}">${l.status === 'PENDING_MANAGER' ? 'موافقة' : 'مصادقة نهائية'}</button>
@@ -324,20 +359,25 @@ document.addEventListener('click', (ev) => {
 // ===== الأعوان والأرصدة (الموارد البشرية) =====
 async function loadStaff() {
   $('yearLbl2').textContent = YEAR;
-  const [emps, bals] = await Promise.all([API.employees(), API.balances(YEAR)]);
+  const [emps, bals, leaves] = await Promise.all([API.employees(), API.allBalances(), API.leaves()]);
+  const years = [YEAR - 2, YEAR - 1, YEAR];
   $('empList').innerHTML = emps.map((e) => {
-    const b = bals.find((x) => x.matricule === e.matricule) || { entitled: 30, carried: 0 };
+    const rows = bals.filter((x) => x.matricule === e.matricule);
+    const r = annualBuckets(leaves.filter((l) => l.matricule === e.matricule), rows, YEAR);
+    const op = (y) => { const x = rows.find((b) => +b.year === y); return x ? Number(x.opening) : 30; };
     return `<div class="item">
       <div class="t"><span>${esc(e.name)} <span class="d">· ${esc(e.matricule)}</span></span><span class="pill p-RETURNED">${ROLE[e.role]}</span></div>
       <div class="d">${e.email ? esc(e.email) : '<span class="err">لا يوجد بريد: لا يستطيع الدخول</span>'}</div>
-      <div class="two"><label>المستحق<input type="number" step="0.5" min="0" value="${b.entitled}" id="be_${esc(e.matricule)}"></label><label>المرحّل<input type="number" step="0.5" min="0" max="30" value="${b.carried}" id="bc_${esc(e.matricule)}"></label></div>
+      <div class="d">الرصيد المتبقي: <b>${fmt(r.remaining)}</b> يوماً (${r.buckets.map((b) => `${fmt(b.remaining)} من ${b.year}`).join('، ')})</div>
+      <div class="three">${years.map((y) => `<label>متاح ${y}<input type="number" step="0.5" min="0" max="30" value="${op(y)}" id="bo_${esc(e.matricule)}_${y}"></label>`).join('')}</div>
+      <div class="d hint">«متاح» = ما بقي من استحقاق تلك السنة قبل بدء العمل بالتطبيقة (30 إن لم يستهلك منها شيئاً).</div>
       <div class="actions"><button class="btn sm navy" data-bal="${esc(e.matricule)}">حفظ الرصيد</button><button class="btn sm ghost" data-mail="${esc(e.matricule)}">تعديل البريد</button></div>
     </div>`;
   }).join('');
 }
 document.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-bal]');
-  if (b) { const m = b.dataset.bal; run(b, async () => { await API.saveBalance(m, YEAR, +$(`be_${m}`).value, Math.min(30, +$(`bc_${m}`).value)); toast('حُفظ الرصيد.'); }); }
+  if (b) { const m = b.dataset.bal; run(b, async () => { for (const y of [YEAR - 2, YEAR - 1, YEAR]) await API.saveBalance(m, y, Math.min(30, Math.max(0, +$(`bo_${m}_${y}`).value))); toast('حُفظ الرصيد.'); await loadStaff(); }); }
   const e = ev.target.closest('[data-mail]');
   if (e) { const m = e.dataset.mail, email = window.prompt('البريد الإلكتروني للعون'); if (email) run(e, async () => { await API.updateEmployee(m, { email: email.trim().toLowerCase() }); toast('حُفظ البريد.'); await loadStaff(); }); }
 });

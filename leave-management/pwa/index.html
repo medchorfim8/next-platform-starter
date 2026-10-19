@@ -74,6 +74,13 @@ input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px sol
 .p-REJECTED, .p-CANCELLED { background: var(--bad-soft); color: var(--bad); }
 .p-RETURNED { background: var(--yellow-soft); color: var(--navy); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hero .yr { display: inline-grid; justify-items: center; min-width: 64px; margin-inline-end: 8px; padding: 4px 8px; border-radius: 10px; background: rgba(255,255,255,.08); }
+.hero .yr small { color: #c9cdf0; font-size: .75rem; }
+.hero .yr b { color: var(--yellow); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.hero .yr.old { outline: 1px dashed var(--yellow); }
+.hero .hint, .hint { font-size: .8rem; color: #dfe2f7; margin-top: 8px; }
+.card .hint { color: var(--muted); }
 .row-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .link { background: none; border: 0; color: var(--navy); font-weight: 600; font-size: .9rem; padding: 4px 0; cursor: pointer; }
 @media (prefers-color-scheme: dark) { .link { color: var(--yellow); } }
@@ -145,12 +152,12 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
       <button class="btn sm primary" id="installBtn">تثبيت</button>
     </div>
     <div class="card hero">
-      <span class="k">رصيد العطلة السنوية المتبقي — <span id="yearLbl"></span></span>
+      <span class="k">رصيد العطلة السنوية المتبقي (<span id="yearLbl"></span>)</span>
       <span class="v" id="remaining">—</span>
-      <span class="s" id="balDetail"></span>
+      <div class="s" id="balDetail"></div>
     </div>
     <div class="stats">
-      <div class="stat"><b id="stUsed">—</b><span>مستهلك</span></div>
+      <div class="stat"><b id="stUsed">—</b><span>مستهلك هذه السنة</span></div>
       <div class="stat"><b id="stPending">—</b><span>في الانتظار</span></div>
       <div class="stat"><b id="stSick">—</b><span>أيام مرض</span></div>
     </div>
@@ -197,7 +204,6 @@ nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
     <label>نوع العطلة<select id="fType"></select></label>
     <div class="two"><label>من<input type="date" id="fStart" required></label><label>إلى (بدخول الغاية)<input type="date" id="fEnd" required></label></div>
     <label id="fReasonW" hidden>السبب<select id="fReason"></select></label>
-    <label id="fYearW">بعنوان سنة<select id="fYear"></select></label>
     <label>العنوان خلال العطلة<input id="fAddress"></label>
     <label>إسم النائب (عند الاقتضاء)<input id="fInterim"></label>
     <label>ملاحظة<input id="fNote" placeholder="مثال: الشهادة الطبية تُسلَّم يوم ..."></label>

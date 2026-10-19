@@ -18,8 +18,7 @@ create table if not exists employees (
 create table if not exists balances (
   matricule text not null references employees on update cascade,
   year      int  not null,
-  entitled  numeric(5,1) not null default 30,       -- المستحق
-  carried   numeric(5,1) not null default 0 check (carried between 0 and 30), -- المرحّل
+  opening   numeric(5,1) not null default 30 check (opening between 0 and 30), -- المتاح من استحقاق تلك السنة عند بدء العمل بالتطبيقة
   primary key (matricule, year)
 );
 
@@ -72,15 +71,51 @@ language sql stable as $$
   else (p_end - p_start + 1) end
 $$;
 
+-- قاعدة الرصيد: 30 يوماً لكل سنة، والرصيد = السنة الحالية + السنتان الماضيتان.
+-- العطلة السنوية تُخصم من أقدم سنة أولاً، وعند دخول سنة جديدة يسقط ما بقي من السنة الخارجة من النافذة.
+-- الطلبات في الانتظار تحجز أيامها كالطلبات المقبولة.
+create or replace function annual_buckets(p_matricule text, p_year int)
+returns table (year int, opening numeric, used numeric, remaining numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare y0 int; n int; ent numeric[]; usd numeric[]; i int; k int; need numeric; take numeric; l record;
+begin
+  if not (p_matricule = my_matricule() or is_staff()) then return; end if;
+  select least(p_year, coalesce(min(extract(year from start_date))::int, p_year)) - 2 into y0
+    from leaves where matricule = p_matricule and type = 'ANNUAL';
+  n := p_year - y0 + 1;
+  for i in 1..n loop
+    ent[i] := coalesce((select b.opening from balances b where b.matricule = p_matricule and b.year = y0 + i - 1), 30);
+    usd[i] := 0;
+  end loop;
+  for l in select x.days, x.start_date from leaves x
+           where x.matricule = p_matricule and x.type = 'ANNUAL' and x.status in ('PENDING_MANAGER','PENDING_HR','APPROVED')
+             and extract(year from x.start_date) <= p_year
+           order by x.start_date, x.created_at loop
+    k := extract(year from l.start_date)::int - y0 + 1;
+    need := l.days;
+    for i in greatest(1, k - 2)..k loop
+      exit when need <= 0;
+      take := least(need, greatest(ent[i] - usd[i], 0));
+      usd[i] := usd[i] + take; need := need - take;
+    end loop;
+    if need > 0 then usd[k] := usd[k] + need; end if;
+  end loop;
+  for i in greatest(1, n - 2)..n loop
+    year := y0 + i - 1; opening := ent[i]; used := usd[i]; remaining := ent[i] - usd[i];
+    return next;
+  end loop;
+end $$;
+
 create or replace function balance_of(p_matricule text, p_year int)
-returns table (entitled numeric, carried numeric, used numeric, pending numeric, remaining numeric)
+returns table (entitled numeric, used numeric, pending numeric, remaining numeric)
 language sql stable security definer set search_path = public as $$
-  with b as (select coalesce(max(entitled), 30) e, coalesce(max(carried), 0) c from balances where matricule = p_matricule and year = p_year),
-       l as (select coalesce(sum(days) filter (where status = 'APPROVED'), 0) u,
-                    coalesce(sum(days) filter (where status in ('PENDING_MANAGER','PENDING_HR')), 0) p
-             from leaves where matricule = p_matricule and type = 'ANNUAL' and extract(year from start_date) = p_year)
-  select b.e, b.c, l.u, l.p, b.e + b.c - l.u - l.p from b, l
-  where p_matricule = my_matricule() or is_staff()
+  select sum(b.opening), sum(b.used) - coalesce((select sum(x.days) from leaves x where x.matricule = p_matricule and x.type = 'ANNUAL'
+           and x.status in ('PENDING_MANAGER','PENDING_HR') and extract(year from x.start_date) between p_year - 2 and p_year), 0),
+         coalesce((select sum(x.days) from leaves x where x.matricule = p_matricule and x.type = 'ANNUAL'
+           and x.status in ('PENDING_MANAGER','PENDING_HR') and extract(year from x.start_date) between p_year - 2 and p_year), 0),
+         sum(b.remaining)
+  from annual_buckets(p_matricule, p_year) b
+  having count(*) > 0
 $$;
 
 create or replace function leaves_before() returns trigger
@@ -186,5 +221,5 @@ create policy hol_read on holidays for select to authenticated using (true);
 drop policy if exists hol_write on holidays;
 create policy hol_write on holidays for all to authenticated using (my_role() = 'hr') with check (my_role() = 'hr');
 
-revoke execute on function request_leave, cancel_my_leave, decide_leave, balance_of from public, anon;
-grant execute on function request_leave, cancel_my_leave, decide_leave, balance_of to authenticated;
+revoke execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets from public, anon;
+grant execute on function request_leave, cancel_my_leave, decide_leave, balance_of, annual_buckets to authenticated;
