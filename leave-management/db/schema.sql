@@ -19,7 +19,6 @@ CREATE TABLE employee (            -- العون
   grade          text,                          -- الرتبة
   category       text,                          -- الصنف (أ1، أ2، ب، ج، د) أو عامل
   status         text NOT NULL DEFAULT 'ACTIVE',-- مباشر / عدم مباشرة / إلحاق / متقاعد
-  hire_date      date,                          -- تاريخ الانتداب (يُستورد؛ لا يُفتح الاستحقاق قبل تعبئته)
   org_unit_id    int NOT NULL REFERENCES org_unit(id),
   ldap_dn        text UNIQUE,
   email          text,

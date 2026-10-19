@@ -9,12 +9,11 @@ test('احتساب الأيام', () => {
   assert.equal(countDays('2026-10-19', '2026-10-25', 'WORKING', { holidays: ['2026-10-20'] }), 4);
 });
 
-test('الاستحقاق السنوي والانتداب خلال السنة', () => {
-  assert.equal(annualEntitlement(2026, '2015-03-01'), 30);
-  assert.equal(annualEntitlement(2026, '2026-07-01'), 15); // 6 أشهر × 2.5
-  assert.equal(annualEntitlement(2026, '2026-07-10'), 12.5); // جويلية غير محتسب
-  assert.equal(annualEntitlement(2026, '2015-01-01', { suspendedMonths: 2 }), 25);
-  assert.equal(annualEntitlement(2026, '2027-01-01'), 0);
+test('الاستحقاق السنوي', () => {
+  assert.equal(annualEntitlement(), 30);
+  assert.equal(annualEntitlement({ monthsWorked: 6 }), 15); // 6 أشهر × 2.5
+  assert.equal(annualEntitlement({ suspendedMonths: 2 }), 25);
+  assert.equal(annualEntitlement({ monthsWorked: 0 }), 0);
 });
 
 test('الترحيل', () => {

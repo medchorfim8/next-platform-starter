@@ -14,14 +14,14 @@ const leaves = demo ? [
 ] : [];
 let sheet = buildAttendanceSheet({ date, unit: unit.code, employees, leaves });
 if (demo) {
-  const full = [{ in: '08:00', out: '12:00' }, { in: '14:00', out: '17:00' }];
+  const full = [{ in: '08:00', out: '13:00' }, { in: '14:00', out: '17:00' }];
   sheet = closeSheet(applyPunches(sheet, [
     { matricule: '61452', punches: full },
-    { matricule: '63541', punches: [{ in: '08:40', out: '12:00' }, { in: '14:00', out: '17:00' }] },
+    { matricule: '63541', punches: [{ in: '08:40', out: '13:00' }, { in: '14:00', out: '17:00' }] },
     { matricule: '61533', punches: full },
-    { matricule: '61740', punches: [{ in: '07:55', out: '12:00' }, {}] },
+    { matricule: '61740', punches: [{ in: '07:55', out: '13:00' }, {}] },
     { matricule: '68450', punches: [] },
-    { matricule: '65705', punches: [{ in: '08:05', out: '12:00' }, { in: '14:00', out: '16:20' }] },
+    { matricule: '65705', punches: [{ in: '08:05', out: '13:00' }, { in: '14:00', out: '16:20' }] },
   ]), { 6: 12 });
 }
 const logo = 'data:image/png;base64,' + readFileSync(new URL('assets/logo.png', root)).toString('base64');

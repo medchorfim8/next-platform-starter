@@ -35,9 +35,9 @@ test('نظام الحصة الواحدة', () => {
 test('تحليل الحضور', () => {
   const S = SCHEDULES.DOUBLE;
   const row = (punches) => ({ status: 'EXPECTED', punches });
-  assert.deepEqual(analyzeRow(row([{ in: '08:05', out: '12:00' }, { in: '14:00', out: '17:00' }]), S), []);
+  assert.deepEqual(analyzeRow(row([{ in: '08:05', out: '13:00' }, { in: '14:00', out: '17:00' }]), S), []);
   assert.deepEqual(analyzeRow(row([]), S).map((a) => a.code), ['ABSENT']);
-  assert.deepEqual(analyzeRow(row([{ in: '08:30', out: '12:00' }, {}]), S).map((a) => a.code), ['LATE', 'HALF_ABSENT']);
+  assert.deepEqual(analyzeRow(row([{ in: '08:30', out: '13:00' }, {}]), S).map((a) => a.code), ['LATE', 'HALF_ABSENT']);
   assert.deepEqual(analyzeRow(row([{ in: '08:00' }, { in: '14:00', out: '16:30' }]), S).map((a) => a.code), ['MISSING_PUNCH', 'EARLY_LEAVE']);
 });
 
@@ -48,7 +48,7 @@ test('مقترحات التسوية', () => {
 });
 
 test('استيراد بطاقة مرقونة وإقفالها', () => {
-  const csv = '﻿ع/ر,الرقم الآلي,الإسم و اللقب,دخول,خروج,دخول,خروج,ملاحظات\n1,61452,إيناس زقر,08:00,12:00,14:00,17:00,\n2,63541,فوزي جاري,08:40,12:00,14:00,17:00,\n';
+  const csv = '﻿ع/ر,الرقم الآلي,الإسم و اللقب,دخول,خروج,دخول,خروج,ملاحظات\n1,61452,إيناس زقر,08:00,13:00,14:00,17:00,\n2,63541,فوزي جاري,08:40,13:00,14:00,17:00,\n';
   const sheet = applyPunches(buildAttendanceSheet({ date: '2026-02-09', employees, leaves }), parseSheetCsv(csv));
   const closed = closeSheet(sheet, { 6: 10 });
   assert.equal(closed.rows[1].remark, 'تأخير 40 دق');

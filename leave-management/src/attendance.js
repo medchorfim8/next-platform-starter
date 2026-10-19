@@ -3,9 +3,9 @@
 // دخول/خروج (الحصة المسائية)، ملاحظات.
 import { LEAVE_TYPES, countDays } from './rules.js';
 
-// التوقيت الإداري — VERIFY حسب المنشور الداخلي للمؤسسة
+// التوقيت الإداري المعتمد: 08:00–13:00 و14:00–17:00 (الحصة الواحدة: VERIFY)
 export const SCHEDULES = {
-  DOUBLE: { label: 'نظام الحصتين', sessions: [{ in: '08:00', out: '12:00' }, { in: '14:00', out: '17:00' }] },
+  DOUBLE: { label: 'نظام الحصتين', sessions: [{ in: '08:00', out: '13:00' }, { in: '14:00', out: '17:00' }] },
   SINGLE: { label: 'نظام الحصة الواحدة', sessions: [{ in: '07:30', out: '13:30' }] },
 };
 export const TOLERANCE_MIN = 10; // دقائق التسامح قبل اعتبار التأخير
@@ -45,7 +45,7 @@ export function buildAttendanceSheet({ date, unit, employees, leaves = [], holid
   return { date, dateAr: formatDateAr(date), unit, schedule, rows };
 }
 
-/** تحليل حضور عون في يوم: يُرجع قائمة المخالفات. punches = [{in:'08:05', out:'12:00'}, {in, out}] بنفس ترتيب الحصص. */
+/** تحليل حضور عون في يوم: يُرجع قائمة المخالفات. punches = [{in:'08:05', out:'13:00'}, {in, out}] بنفس ترتيب الحصص. */
 export function analyzeRow(row, schedule, tolerance = TOLERANCE_MIN) {
   if (row.status !== 'EXPECTED') return [];
   const out = [];

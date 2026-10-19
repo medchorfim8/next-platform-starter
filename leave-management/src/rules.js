@@ -1,7 +1,7 @@
-// قواعد العطل لأعوان الوظيفة العمومية التونسية.
+// قواعد العطل لأعوان البريد التونسي.
 // كل القيم قابلة للتعديل من واجهة الإدارة (جدول leave_types) — القيم هنا هي الإعدادات الافتراضية.
-// المراجع: القانون عدد 112 لسنة 1983 (النظام الأساسي العام) والقانون عدد 44 لسنة 2024 (عطل الأمومة والأبوة).
-// القيم المعلّمة VERIFY يجب أن تصادق عليها إدارة الشؤون القانونية قبل الإنتاج.
+// المرجع: النظام الأساسي الخاص بأعوان البريد التونسي، والقانون عدد 44 لسنة 2024 (عطل الأمومة والأبوة — ينطبق على القطاع العام).
+// القيم المعلّمة VERIFY تُطابَق مع فصول النظام الأساسي للبريد من قبل الإدارة المركزية للموارد البشرية قبل الإنتاج.
 
 export const PAY = { FULL: 'FULL', HALF: 'HALF', NONE: 'NONE' };
 
@@ -9,8 +9,8 @@ export const LEAVE_TYPES = {
   ANNUAL: {
     label: 'عطلة سنوية للاستراحة (خالصة الأجر)',
     pay: PAY.FULL,
-    accrual: { perYear: 30, perMonthProrata: 2.5 }, // شهر عن كل سنة عمل، 2.5 يوم عن كل شهر للسنة غير الكاملة
-    countMode: 'CALENDAR', // VERIFY: احتساب أيام تقويمية أم أيام عمل حسب منشور الوزارة
+    accrual: { perYear: 30, perMonthProrata: 2.5 }, // VERIFY حسب النظام الأساسي للبريد: الاستحقاق السنوي وما يقابله شهرياً
+    countMode: 'CALENDAR', // VERIFY: أيام تقويمية أم أيام عمل حسب النظام الأساسي للبريد
     carryOver: { maxDays: 30, expiresMonths: 12 }, // VERIFY: تأجيل رصيد سنة واحدة على الأكثر
     minNoticeDays: 15,
     needsDocument: false,
@@ -20,7 +20,6 @@ export const LEAVE_TYPES = {
     pay: PAY.FULL,
     // 12 شهراً على فترة 365 يوماً: شهران بكامل الأجر ثم بنصف الأجر — VERIFY توزيع الأشهر
     tiers: [{ days: 60, pay: PAY.FULL }, { days: 305, pay: PAY.HALF }],
-    probationRatePerMonth: 5, // قبل إتمام 365 يوماً من الخدمة: 5 أيام عن كل شهر عمل فعلي
     medicalCommitteeAboveDays: 30, // ما يتجاوز 30 يوماً في السنة يتطلب رأي اللجنة الطبية
     countMode: 'CALENDAR',
     retroactiveDays: 2, // تقديم الشهادة الطبية في أجل 48 ساعة
@@ -69,17 +68,13 @@ export function countDays(start, end, mode = 'CALENDAR', { holidays = [], weeken
   return n;
 }
 
-/** استحقاق العطلة السنوية لسنة مدنية معينة حسب تاريخ الانتداب ومدد عدم المباشرة. */
-export function annualEntitlement(year, hireDate, { suspendedMonths = 0 } = {}) {
+/**
+ * استحقاق العطلة السنوية لسنة مدنية. لا يُعتمد تاريخ الانتداب: الاستحقاق كامل افتراضياً، ويُدخل عون
+ * الموارد البشرية عدد أشهر العمل الفعلي عند الاقتضاء (التحاق خلال السنة) ومدد عدم المباشرة.
+ */
+export function annualEntitlement({ monthsWorked = 12, suspendedMonths = 0 } = {}) {
   const r = LEAVE_TYPES.ANNUAL.accrual;
-  const hire = toDate(hireDate);
-  if (hire.getUTCFullYear() > year) return 0;
-  let months = 12;
-  if (hire.getUTCFullYear() === year) {
-    // الشهر الأول لا يحتسب إلا إذا تمت المباشرة في يومه الأول
-    months = 12 - hire.getUTCMonth() - (hire.getUTCDate() > 1 ? 1 : 0);
-  }
-  months = Math.max(0, months - suspendedMonths);
+  const months = Math.max(0, Math.min(12, monthsWorked) - suspendedMonths);
   return months === 12 ? r.perYear : Math.round(months * r.perMonthProrata * 2) / 2;
 }
 
