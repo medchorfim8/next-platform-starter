@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>عطلي — البريد التونسي</title>
+<meta name="description" content="متابعة رصيد العطل وطلب عطلة لأعوان إدارة العمل الاجتماعي والثقافي">
+<meta name="theme-color" content="#181d54">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="عطلي">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<style>
+/* هاتف أولاً: شريط علوي أزرق، محتوى في بطاقات، شريط تنقل سفلي */
+:root {
+  --navy: #181d54; --navy-2: #232a6e; --yellow: #fcbf16; --yellow-soft: #fff4d1;
+  --bg: #f2f3f8; --surface: #fff; --ink: #161a3d; --muted: #5d6283; --line: #dfe2ee;
+  --ok: #1e7a4c; --ok-soft: #e1f3e9; --warn: #8a5a00; --warn-soft: #fdf0d6; --bad: #b4232c; --bad-soft: #fbe4e5;
+  --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0c0f2b; --surface: #161b45; --ink: #eef0fb; --muted: #a3a8cc; --line: #2b3170;
+  --ok-soft: #173326; --warn-soft: #3a2b12; --bad-soft: #3d1d21; --yellow-soft: #3a3214; color-scheme: dark } }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--font); }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.top { background: var(--navy); color: #fff; padding: calc(env(safe-area-inset-top, 0px) + 14px) 18px 18px; border-bottom: 4px solid var(--yellow); }
+.top .row { display: flex; align-items: center; gap: 12px; }
+.top .logo { width: 46px; height: 40px; background: #fff; border-radius: 10px; padding: 3px; flex: none; }
+.top .logo img { width: 100%; height: 100%; object-fit: contain; }
+.top h1 { margin: 0; font-size: 1.15rem; line-height: 1.3; }
+.top .sub { color: var(--yellow); font-size: .8rem; }
+.top .out { margin-inline-start: auto; background: transparent; border: 1px solid rgba(255,255,255,.35); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: .85rem; }
+main { padding: 16px 16px calc(96px + var(--safe-b)); max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.hero { background: var(--navy); color: #fff; border: 0; display: grid; gap: 4px; }
+.hero .k { color: #c9cdf0; font-size: .9rem; }
+.hero .v { color: var(--yellow); font-size: 3rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hero .s { color: #c9cdf0; font-size: .85rem; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; text-align: center; }
+.stat b { display: block; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .78rem; color: var(--muted); }
+h2 { font-size: 1.05rem; margin: 4px 2px 0; }
+.btn { display: block; width: 100%; border: 0; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 1.05rem; cursor: pointer; }
+.btn.primary { background: var(--yellow); color: var(--navy); }
+.btn.navy { background: var(--navy); color: #fff; }
+.btn.ghost { background: transparent; border: 1.5px solid var(--line); color: var(--ink); font-weight: 600; }
+.btn:disabled { opacity: .55; }
+.btn.sm { display: inline-block; width: auto; padding: 8px 14px; font-size: .9rem; border-radius: 10px; }
+.btn.ok { background: var(--ok); color: #fff; }
+.btn.bad { background: transparent; color: var(--bad); border: 1.5px solid var(--bad); }
+label { display: grid; gap: 6px; font-size: .9rem; color: var(--muted); }
+input, select, textarea { width: 100%; background: var(--bg); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; font-size: 1rem; }
+input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
+.form { display: grid; gap: 14px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.preview { background: var(--yellow-soft); border-radius: 12px; padding: 10px 12px; font-size: .95rem; }
+.err { color: var(--bad); font-size: .9rem; }
+.item { display: grid; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.item .t { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-weight: 600; }
+.item .d { color: var(--muted); font-size: .9rem; }
+.pill { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.p-PENDING_MANAGER, .p-PENDING_HR { background: var(--warn-soft); color: var(--warn); }
+.p-APPROVED { background: var(--ok-soft); color: var(--ok); }
+.p-REJECTED, .p-CANCELLED { background: var(--bad-soft); color: var(--bad); }
+.p-RETURNED { background: var(--yellow-soft); color: var(--navy); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.empty { color: var(--muted); text-align: center; padding: 18px 0; }
+nav.bottom { position: fixed; inset: auto 0 0 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; padding-bottom: var(--safe-b); z-index: 5; }
+nav.bottom button { flex: 1; background: none; border: 0; padding: 10px 4px 12px; font-size: .8rem; color: var(--muted); display: grid; justify-items: center; gap: 2px; }
+nav.bottom button svg { width: 24px; height: 24px; }
+nav.bottom button[aria-current="page"] { color: var(--navy); font-weight: 700; }
+@media (prefers-color-scheme: dark) { nav.bottom button[aria-current="page"] { color: var(--yellow); } }
+.login { min-height: 100dvh; display: grid; align-content: center; gap: 18px; padding: 24px; max-width: 420px; margin: 0 auto; }
+.login .brand { text-align: center; display: grid; justify-items: center; gap: 6px; }
+.login .brand img { width: 120px; }
+.login h1 { margin: 0; font-size: 1.5rem; color: var(--navy); }
+@media (prefers-color-scheme: dark) { .login h1 { color: var(--yellow); } }
+.code { letter-spacing: .5em; text-align: center; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: .85rem; text-align: center; }
+.demo { background: var(--yellow-soft); border-radius: 12px; padding: 10px; font-size: .85rem; }
+.install { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1.5px dashed var(--yellow); border-radius: 14px; padding: 10px 12px; font-size: .9rem; }
+.toast { position: fixed; left: 16px; right: 16px; bottom: calc(84px + var(--safe-b)); background: var(--ink); color: var(--bg); padding: 12px 14px; border-radius: 12px; text-align: center; z-index: 9; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(12, 15, 43, .5); z-index: 8; display: grid; align-items: end; }
+.sheet { background: var(--surface); border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + var(--safe-b)); max-height: 92dvh; overflow: auto; max-width: 640px; width: 100%; margin: 0 auto; }
+.sheet h2 { margin: 0 0 12px; font-size: 1.2rem; }
+</style>
+</head>
+<body>
+
+<!-- تسجيل الدخول -->
+<section class="login" id="vLogin" hidden>
+  <div class="brand">
+    <img src="icons/logo.png" alt="شعار البريد التونسي">
+    <h1>عطلي</h1>
+    <div class="note" id="unitName"></div>
+  </div>
+  <div class="card form" id="stepEmail">
+    <label>بريدك الإلكتروني المهني<input type="email" id="email" autocomplete="email" inputmode="email" placeholder="name@example.tn" required></label>
+    <button class="btn navy" id="sendCode">أرسل لي رمز الدخول</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+  <div class="card form" id="stepCode" hidden>
+    <div class="note">أرسلنا رمزاً من 6 أرقام إلى <b id="sentTo"></b></div>
+    <input class="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+    <button class="btn navy" id="verify">دخول</button>
+    <button class="btn ghost" id="back">تغيير البريد</button>
+    <div class="err" id="codeErr"></div>
+  </div>
+  <div class="demo" id="demoBox" hidden>
+    <b>وضع تجريبي:</b> التطبيقة غير مربوطة بقاعدة بيانات بعد. ادخل بأحد الحسابات التجريبية (أي رمز يُقبل):
+    <div class="actions" style="margin-top:8px">
+      <button class="btn sm ghost" data-demo="inas@demo.tn">عون</button>
+      <button class="btn sm ghost" data-demo="chef@demo.tn">رئيس قسم</button>
+      <button class="btn sm ghost" data-demo="rh@demo.tn">موارد بشرية</button>
+    </div>
+  </div>
+</section>
+
+<!-- التطبيقة -->
+<div id="vApp" hidden>
+  <header class="top">
+    <div class="row">
+      <div class="logo"><img src="icons/logo.png" alt=""></div>
+      <div><h1 id="hello">مرحباً</h1><div class="sub" id="who"></div></div>
+      <button class="out" id="logout">خروج</button>
+    </div>
+  </header>
+
+  <main id="pMine">
+    <div class="install" id="installBox" hidden>
+      <span id="installText">ثبّت التطبيقة على هاتفك للوصول السريع.</span>
+      <button class="btn sm primary" id="installBtn">تثبيت</button>
+    </div>
+    <div class="card hero">
+      <span class="k">رصيد العطلة السنوية المتبقي — <span id="yearLbl"></span></span>
+      <span class="v" id="remaining">—</span>
+      <span class="s" id="balDetail"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stUsed">—</b><span>مستهلك</span></div>
+      <div class="stat"><b id="stPending">—</b><span>في الانتظار</span></div>
+      <div class="stat"><b id="stSick">—</b><span>أيام مرض</span></div>
+    </div>
+    <button class="btn primary" id="newLeave">+ طلب عطلة</button>
+    <h2>عطلي</h2>
+    <div class="card" id="myList"><div class="empty">جارٍ التحميل…</div></div>
+  </main>
+
+  <main id="pApprovals" hidden>
+    <h2>طلبات في انتظار قرارك</h2>
+    <div class="card" id="apList"><div class="empty">جارٍ التحميل…</div></div>
+  </main>
+
+  <main id="pStaff" hidden>
+    <h2>الأعوان والأرصدة — <span id="yearLbl2"></span></h2>
+    <div class="card" id="empList"><div class="empty">جارٍ التحميل…</div></div>
+    <h2>إضافة عون</h2>
+    <form class="card form" id="empForm">
+      <div class="two"><label>الرقم الآلي<input id="eMat" required inputmode="numeric"></label><label>الرتبة<input id="eGrade"></label></div>
+      <label>الإسم واللقب<input id="eName" required></label>
+      <label>البريد الإلكتروني<input id="eEmail" type="email" required></label>
+      <label>الدور<select id="eRole"><option value="agent">عون</option><option value="manager">رئيس مباشر</option><option value="hr">موارد بشرية</option></select></label>
+      <button class="btn navy" type="submit">إضافة</button>
+    </form>
+  </main>
+
+  <nav class="bottom" id="nav">
+    <button data-p="pMine" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>عطلي</button>
+    <button data-p="pApprovals" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>الموافقات <span id="apCount"></span></button>
+    <button data-p="pStaff" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2-1.5-4-4-4.6"/></svg>الأعوان</button>
+  </nav>
+</div>
+
+<!-- نافذة طلب عطلة -->
+<div class="sheet-bg" id="sheet" hidden>
+  <form class="sheet form" id="leaveForm">
+    <h2>طلب عطلة</h2>
+    <label>نوع العطلة<select id="fType"></select></label>
+    <div class="two"><label>من<input type="date" id="fStart" required></label><label>إلى (بدخول الغاية)<input type="date" id="fEnd" required></label></div>
+    <label id="fReasonW" hidden>السبب<select id="fReason"></select></label>
+    <label id="fYearW">بعنوان سنة<select id="fYear"></select></label>
+    <label>العنوان خلال العطلة<input id="fAddress"></label>
+    <label>إسم النائب (عند الاقتضاء)<input id="fInterim"></label>
+    <label>ملاحظة<input id="fNote" placeholder="مثال: الشهادة الطبية تُسلَّم يوم ..."></label>
+    <div class="preview" id="fPreview">اختر التاريخين لعرض عدد الأيام.</div>
+    <div class="err" id="fErr"></div>
+    <button class="btn primary" type="submit" id="fSubmit">إرسال الطلب</button>
+    <button class="btn ghost" type="button" id="fCancel">إلغاء</button>
+  </form>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
