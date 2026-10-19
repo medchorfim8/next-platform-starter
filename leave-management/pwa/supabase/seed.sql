@@ -1,20 +1,23 @@
 -- المعطيات الأولى: تُنفَّذ بعد schema.sql (SQL Editor ← Run)
--- 1) غيّر البريد الإلكتروني لكل عون إلى بريده الحقيقي قبل التنفيذ.
--- 2) غيّر 'rh@exemple.tn' إلى بريدك أنت (الموارد البشرية).
-insert into employees (matricule, name, email, role, sort) values
-  ('RH-001', 'الموارد البشرية', 'rh@exemple.tn', 'hr', 0),
-  ('61452', 'إيناس زقر',     null, 'agent', 1),
-  ('63541', 'فوزي جاري',     null, 'agent', 2),
-  ('65650', 'أميمة التركي',  null, 'agent', 3),
-  ('61533', 'عفاف الصيد',    null, 'agent', 4),
-  ('61740', 'سميرة حمدي',    null, 'agent', 5),
-  ('67475', 'محمد شرفي',     null, 'agent', 6),
-  ('68450', 'آمنة عاشوري',   null, 'agent', 7),
-  ('65705', 'ليليا توايتي',  null, 'agent', 8)
-on conflict (matricule) do nothing;
+-- المصدر: البطاقات المهنية 2023 (الرقم الآلي، الإسم واللقب، الخطة، الوظيفة) وبطاقة الحضور.
+-- قبل التنفيذ:
+--   1) ضع البريد الإلكتروني لكل عون مكان null.
+--   2) ضع بريدك أنت مكان 'rh@exemple.tn' (الموارد البشرية).
+--   3) أكمل يدوياً الرتبة الناقصة (آمنة عاشوري، ليليا توايتي).
+insert into employees (matricule, name, grade, email, role, sort) values
+  ('RH-001', 'الموارد البشرية',      null,               'rh@exemple.tn', 'hr',      0),
+  ('61452',  'إيناس زڤر بوصبيع',     'متصرّف رئيس',      null,            'manager', 1), -- رئيس دائرة: الرئيس المباشر
+  ('63541',  'فوزي جاري',            'متصرّف',           null,            'agent',   2),
+  ('65650',  'أميمة التركي',         'متصرّف رئيس',      null,            'agent',   3),
+  ('61533',  'عفاف الصيد',           'متصرّف رئيس',      null,            'agent',   4),
+  ('61740',  'سميرة الحمدي',         'متصرّف عام',       null,            'agent',   5),
+  ('67475',  'محمّد شرفي',           'عون إداري',        null,            'agent',   6),
+  ('68450',  'آمنة عاشوري',          null,               null,            'agent',   7), -- الرتبة: تُكمَّل يدوياً
+  ('65705',  'ليليا توايتي',         null,               null,            'agent',   8)  -- الرتبة: تُكمَّل يدوياً
+on conflict (matricule) do update set name = excluded.name, grade = coalesce(excluded.grade, employees.grade), role = excluded.role, sort = excluded.sort;
 
 insert into balances (matricule, year, entitled, carried)
-select matricule, 2026, 30, 0 from employees where role = 'agent'
+select matricule, 2026, 30, 0 from employees where role <> 'hr'
 on conflict do nothing;
 
 insert into holidays (day, label) values

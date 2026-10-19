@@ -53,18 +53,18 @@ function supabaseApi() {
 }
 
 function demoApi() {
-  const KEY = 'demo-conges-v1';
+  const KEY = 'demo-conges-v2';
   const seed = () => ({
     employees: [
       { matricule: 'RH-001', name: 'الموارد البشرية', email: 'rh@demo.tn', role: 'hr', sort: 0 },
-      { matricule: '65650', name: 'أميمة التركي', email: 'chef@demo.tn', role: 'manager', sort: 3 },
-      { matricule: '61452', name: 'إيناس زقر', email: 'inas@demo.tn', role: 'agent', sort: 1, grade: 'متصرف' },
-      { matricule: '63541', name: 'فوزي جاري', email: 'fawzi@demo.tn', role: 'agent', sort: 2 },
+      { matricule: '61452', name: 'إيناس زڤر بوصبيع', email: 'chef@demo.tn', role: 'manager', sort: 1, grade: 'متصرّف رئيس' },
+      { matricule: '63541', name: 'فوزي جاري', email: 'agent@demo.tn', role: 'agent', sort: 2, grade: 'متصرّف' },
+      { matricule: '65650', name: 'أميمة التركي', email: 'oumaima@demo.tn', role: 'agent', sort: 3, grade: 'متصرّف رئيس' },
     ],
-    balances: [{ matricule: '61452', year: YEAR, entitled: 30, carried: 6 }, { matricule: '63541', year: YEAR, entitled: 30, carried: 0 }, { matricule: '65650', year: YEAR, entitled: 30, carried: 2 }],
+    balances: [{ matricule: '61452', year: YEAR, entitled: 30, carried: 2 }, { matricule: '63541', year: YEAR, entitled: 30, carried: 6 }, { matricule: '65650', year: YEAR, entitled: 30, carried: 0 }],
     leaves: [
-      { id: 'd1', matricule: '61452', type: 'ANNUAL', start_date: `${YEAR}-08-03`, end_date: `${YEAR}-08-12`, days: 10, status: 'APPROVED', log: [] },
-      { id: 'd2', matricule: '63541', type: 'EXCEPTIONAL', reason: 'اجتياز امتحان', start_date: `${YEAR}-11-03`, end_date: `${YEAR}-11-04`, days: 2, status: 'PENDING_MANAGER', log: [] },
+      { id: 'd1', matricule: '63541', type: 'ANNUAL', start_date: `${YEAR}-08-03`, end_date: `${YEAR}-08-12`, days: 10, status: 'APPROVED', log: [] },
+      { id: 'd2', matricule: '65650', type: 'EXCEPTIONAL', reason: 'اجتياز امتحان', start_date: `${YEAR}-11-03`, end_date: `${YEAR}-11-04`, days: 2, status: 'PENDING_MANAGER', log: [] },
     ],
     holidays: [{ day: `${YEAR}-12-17`, label: 'عيد الثورة' }],
     session: null,
